@@ -39,6 +39,8 @@ def create_rubber_material():
     """
     # Create a new node group
     group = bpy.data.node_groups.new(name='Rubber', type='ShaderNodeTree')
+    # Mark as fake user to prevent deletion when saving
+    group.use_fake_user = True
 
     # Create group inputs and outputs
     group_inputs = group.nodes.new('NodeGroupInput')
@@ -74,6 +76,8 @@ def create_metal_material():
     """
     # Create a new node group
     group = bpy.data.node_groups.new(name='MyMetal', type='ShaderNodeTree')
+    # Mark as fake user to prevent deletion when saving
+    group.use_fake_user = True
 
     # Create group inputs and outputs
     group_inputs = group.nodes.new('NodeGroupInput')
@@ -102,19 +106,27 @@ def create_metal_material():
 
     return group
 
-def save_node_group(node_group, output_dir, filename):
+def save_node_group(name, create_func, output_dir):
     """Save a node group to a .blend file."""
     # Create a fresh file
     bpy.ops.wm.read_homefile(use_empty=True)
 
-    # Re-create the node group (since we cleared everything)
-    if filename == 'Rubber.blend':
-        create_rubber_material()
-    elif filename == 'MyMetal.blend':
-        create_metal_material()
+    # Clear existing node groups
+    for ng in bpy.data.node_groups:
+        bpy.data.node_groups.remove(ng)
+
+    # Create the node group
+    create_func()
+
+    # Verify it was created
+    if name in bpy.data.node_groups:
+        print(f"  Created node group: {name}")
+    else:
+        print(f"  ERROR: Failed to create node group: {name}")
+        return
 
     # Save the file
-    filepath = os.path.join(output_dir, filename)
+    filepath = os.path.join(output_dir, f'{name}.blend')
     bpy.ops.wm.save_as_mainfile(filepath=filepath)
     print(f"  Saved: {filepath}")
 
@@ -132,16 +144,9 @@ def main():
     print(f"\nOutput directory: {output_dir}")
     print("\nCreating materials...")
 
-    # Create and save Rubber material
-    clear_scene()
-    rubber = create_rubber_material()
-
-    # Create and save Metal material
-    metal = create_metal_material()
-
     # Save each material to its own file
-    save_node_group(rubber, output_dir, 'Rubber.blend')
-    save_node_group(metal, output_dir, 'MyMetal.blend')
+    save_node_group('Rubber', create_rubber_material, output_dir)
+    save_node_group('MyMetal', create_metal_material, output_dir)
 
     print("\nMaterial files created successfully!")
     print("\nTo use these materials, update your render command:")

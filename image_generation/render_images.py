@@ -554,12 +554,18 @@ def check_visibility(blender_objects, min_pixels_per_object):
   Returns True if all objects are visible and False otherwise.
   """
   f, path = tempfile.mkstemp(suffix='.png')
+  os.close(f)  # Close file descriptor to avoid Windows lock issues
   object_colors = render_shadeless(blender_objects, path=path)
   img = bpy.data.images.load(path)
   p = list(img.pixels)
   color_count = Counter((p[i], p[i+1], p[i+2], p[i+3])
                         for i in range(0, len(p), 4))
-  os.remove(path)
+  # Remove image from Blender before deleting file (Windows compatibility)
+  bpy.data.images.remove(img)
+  try:
+    os.remove(path)
+  except PermissionError:
+    pass  # File may still be locked on Windows, ignore
   if len(color_count) != len(blender_objects) + 1:
     return False
   for _, count in color_count.most_common():

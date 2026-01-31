@@ -175,15 +175,15 @@ def add_material(name, **properties):
   # Figure out how many materials are already in the scene
   mat_count = len(bpy.data.materials)
 
-  # Create a new material; it is not attached to anything and
-  # it will be called "Material"
-  bpy.ops.material.new()
-
-  # Get a reference to the material we just created and rename it;
-  # then the next time we make a new material it will still be called
-  # "Material" and we will still be able to look it up by name
-  mat = bpy.data.materials['Material']
-  mat.name = 'Material_%d' % mat_count
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0: Use bpy.data.materials.new() instead of bpy.ops.material.new()
+    mat = bpy.data.materials.new(name='Material_%d' % mat_count)
+    mat.use_nodes = True
+  else:
+    # Blender 2.79 and earlier
+    bpy.ops.material.new()
+    mat = bpy.data.materials['Material']
+    mat.name = 'Material_%d' % mat_count
 
   # Attach the new material to the active object
   # Make sure it doesn't already have materials
@@ -192,11 +192,15 @@ def add_material(name, **properties):
   obj.data.materials.append(mat)
 
   # Find the output node of the new material
+  # In Blender 5.0, node names may be localized, so use type instead
   output_node = None
   for n in mat.node_tree.nodes:
-    if n.name == 'Material Output':
+    if n.type == 'OUTPUT_MATERIAL':
       output_node = n
       break
+
+  if output_node is None:
+    raise RuntimeError("Could not find Material Output node in material")
 
   # Add a new GroupNode to the node tree of the active material,
   # and copy the node tree from the preloaded node group to the
