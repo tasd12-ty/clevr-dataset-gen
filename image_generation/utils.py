@@ -5,13 +5,20 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 
+# Modified for Blender 5.0 compatibility
+
 import sys, random, os
 import bpy, bpy_extras
 
 
 """
 Some utility functions for interacting with Blender
+Compatible with Blender 2.80+ / 4.x / 5.0
 """
+
+# Blender version check
+BLENDER_VERSION = bpy.app.version
+IS_BLENDER_280_OR_LATER = BLENDER_VERSION >= (2, 80, 0)
 
 
 def extract_args(input_argv=None):
@@ -36,10 +43,18 @@ def parse_args(parser, argv=None):
 # I wonder if there's a better way to do this?
 def delete_object(obj):
   """ Delete a specified blender object """
-  for o in bpy.data.objects:
-    o.select = False
-  obj.select = True
-  bpy.ops.object.delete()
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0
+    for o in bpy.data.objects:
+      o.select_set(False)
+    obj.select_set(True)
+    bpy.ops.object.delete()
+  else:
+    # Blender 2.79 and earlier
+    for o in bpy.data.objects:
+      o.select = False
+    obj.select = True
+    bpy.ops.object.delete()
 
 
 def get_camera_coords(cam, pos):
@@ -66,12 +81,36 @@ def get_camera_coords(cam, pos):
 
 
 def set_layer(obj, layer_idx):
-  """ Move an object to a particular layer """
-  # Set the target layer to True first because an object must always be on
-  # at least one layer.
-  obj.layers[layer_idx] = True
-  for i in range(len(obj.layers)):
-    obj.layers[i] = (i == layer_idx)
+  """
+  Move an object to a particular layer.
+  In Blender 2.80+, layers are replaced by collections.
+  layer_idx 0 = visible (Scene Collection), layer_idx > 0 = hidden collection
+  """
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0: Use collections instead of layers
+    # Unlink from all current collections
+    for col in obj.users_collection:
+      col.objects.unlink(obj)
+
+    if layer_idx == 0:
+      # Link to scene collection (visible)
+      bpy.context.scene.collection.objects.link(obj)
+    else:
+      # Create or get a hidden collection
+      hidden_col_name = f"HiddenLayer_{layer_idx}"
+      if hidden_col_name not in bpy.data.collections:
+        hidden_col = bpy.data.collections.new(hidden_col_name)
+        bpy.context.scene.collection.children.link(hidden_col)
+        # Exclude from view layer to hide
+        bpy.context.view_layer.layer_collection.children[hidden_col_name].exclude = True
+      else:
+        hidden_col = bpy.data.collections[hidden_col_name]
+      hidden_col.objects.link(obj)
+  else:
+    # Blender 2.79 and earlier
+    obj.layers[layer_idx] = True
+    for i in range(len(obj.layers)):
+      obj.layers[i] = (i == layer_idx)
 
 
 def add_object(object_dir, name, scale, loc, theta=0):
@@ -100,7 +139,16 @@ def add_object(object_dir, name, scale, loc, theta=0):
 
   # Set the new object as active, then rotate, scale, and translate it
   x, y = loc
-  bpy.context.scene.objects.active = bpy.data.objects[new_name]
+  obj = bpy.data.objects[new_name]
+
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+  else:
+    # Blender 2.79 and earlier
+    bpy.context.scene.objects.active = obj
+
   bpy.context.object.rotation_euler[2] = theta
   bpy.ops.transform.resize(value=(scale, scale, scale))
   bpy.ops.transform.translate(value=(x, y, scale))

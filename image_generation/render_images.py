@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 
+# Modified for Blender 5.0 compatibility
+
 from __future__ import print_function
 import math, sys, random, argparse, json, os, tempfile
 from datetime import datetime as dt
@@ -20,26 +22,46 @@ ground-truth scene information.
 This file expects to be run from Blender like this:
 
 blender --background --python render_images.py -- [arguments to this script]
+
+Compatible with Blender 2.80+ / 4.x / 5.0
 """
 
 INSIDE_BLENDER = True
 try:
   import bpy, bpy_extras
   from mathutils import Vector
+  BLENDER_VERSION = bpy.app.version
+  IS_BLENDER_280_OR_LATER = BLENDER_VERSION >= (2, 80, 0)
 except ImportError as e:
   INSIDE_BLENDER = False
+  IS_BLENDER_280_OR_LATER = False
+  BLENDER_VERSION = (0, 0, 0)
+
 if INSIDE_BLENDER:
   try:
     import utils
   except ImportError as e:
     print("\nERROR")
-    print("Running render_images.py from Blender and cannot import utils.py.") 
+    print("Running render_images.py from Blender and cannot import utils.py.")
     print("You may need to add a .pth file to the site-packages of Blender's")
     print("bundled python with a command like this:\n")
-    print("echo $PWD >> $BLENDER/$VERSION/python/lib/python3.5/site-packages/clevr.pth")
+    print("echo $PWD >> $BLENDER/$VERSION/python/lib/pythonX.X/site-packages/clevr.pth")
     print("\nWhere $BLENDER is the directory where Blender is installed, and")
-    print("$VERSION is your Blender version (such as 2.78).")
+    print("$VERSION is your Blender version (such as 2.78 or 5.0).")
     sys.exit(1)
+
+def get_object_by_name(name, alternative_names=None):
+  """
+  Get a Blender object by name, with fallback to alternative names.
+  Useful for handling naming changes between Blender versions.
+  """
+  if name in bpy.data.objects:
+    return bpy.data.objects[name]
+  if alternative_names:
+    for alt_name in alternative_names:
+      if alt_name in bpy.data.objects:
+        return bpy.data.objects[alt_name]
+  raise KeyError(f"Object not found: {name} (also tried: {alternative_names})")
 
 parser = argparse.ArgumentParser()
 
@@ -231,11 +253,30 @@ def render_scene(args,
   render_args.resolution_x = args.width
   render_args.resolution_y = args.height
   render_args.resolution_percentage = 100
-  render_args.tile_x = args.render_tile_size
-  render_args.tile_y = args.render_tile_size
+
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0: tile_x/y removed, Cycles handles this automatically
+    pass
+  else:
+    # Blender 2.79 and earlier
+    render_args.tile_x = args.render_tile_size
+    render_args.tile_y = args.render_tile_size
+
   if args.use_gpu == 1:
-    # Blender changed the API for enabling CUDA at some point
-    if bpy.app.version < (2, 78, 0):
+    if IS_BLENDER_280_OR_LATER:
+      # Blender 2.80+ / 5.0
+      cycles_prefs = bpy.context.preferences.addons['cycles'].preferences
+      # Try CUDA first, then OptiX, then HIP for AMD
+      for compute_type in ['CUDA', 'OPTIX', 'HIP', 'ONEAPI']:
+        try:
+          cycles_prefs.compute_device_type = compute_type
+          # Activate all available devices
+          for device in cycles_prefs.devices:
+            device.use = True
+          break
+        except:
+          continue
+    elif bpy.app.version < (2, 78, 0):
       bpy.context.user_preferences.system.compute_device_type = 'CUDA'
       bpy.context.user_preferences.system.compute_device = 'CUDA_0'
     else:
@@ -243,11 +284,23 @@ def render_scene(args,
       cycles_prefs.compute_device_type = 'CUDA'
 
   # Some CYCLES-specific stuff
-  bpy.data.worlds['World'].cycles.sample_as_light = True
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0: sample_as_light renamed/removed
+    # World settings are handled differently
+    pass
+  else:
+    bpy.data.worlds['World'].cycles.sample_as_light = True
+
   bpy.context.scene.cycles.blur_glossy = 2.0
   bpy.context.scene.cycles.samples = args.render_num_samples
-  bpy.context.scene.cycles.transparent_min_bounces = args.render_min_bounces
-  bpy.context.scene.cycles.transparent_max_bounces = args.render_max_bounces
+
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0: transparent bounces settings changed
+    bpy.context.scene.cycles.transparent_max_bounces = args.render_max_bounces
+  else:
+    bpy.context.scene.cycles.transparent_min_bounces = args.render_min_bounces
+    bpy.context.scene.cycles.transparent_max_bounces = args.render_max_bounces
+
   if args.use_gpu == 1:
     bpy.context.scene.cycles.device = 'GPU'
 
@@ -261,7 +314,11 @@ def render_scene(args,
   }
 
   # Put a plane on the ground so we can compute cardinal directions
-  bpy.ops.mesh.primitive_plane_add(radius=5)
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0: 'radius' renamed to 'size'
+    bpy.ops.mesh.primitive_plane_add(size=10)  # size = 2 * radius
+  else:
+    bpy.ops.mesh.primitive_plane_add(radius=5)
   plane = bpy.context.object
 
   def rand(L):
@@ -276,9 +333,17 @@ def render_scene(args,
   # them in the scene structure
   camera = bpy.data.objects['Camera']
   plane_normal = plane.data.vertices[0].normal
-  cam_behind = camera.matrix_world.to_quaternion() * Vector((0, 0, -1))
-  cam_left = camera.matrix_world.to_quaternion() * Vector((-1, 0, 0))
-  cam_up = camera.matrix_world.to_quaternion() * Vector((0, 1, 0))
+
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0: Use @ operator for matrix/vector multiplication
+    cam_behind = camera.matrix_world.to_quaternion() @ Vector((0, 0, -1))
+    cam_left = camera.matrix_world.to_quaternion() @ Vector((-1, 0, 0))
+    cam_up = camera.matrix_world.to_quaternion() @ Vector((0, 1, 0))
+  else:
+    cam_behind = camera.matrix_world.to_quaternion() * Vector((0, 0, -1))
+    cam_left = camera.matrix_world.to_quaternion() * Vector((-1, 0, 0))
+    cam_up = camera.matrix_world.to_quaternion() * Vector((0, 1, 0))
+
   plane_behind = (cam_behind - cam_behind.project(plane_normal)).normalized()
   plane_left = (cam_left - cam_left.project(plane_normal)).normalized()
   plane_up = cam_up.project(plane_normal).normalized()
@@ -296,15 +361,20 @@ def render_scene(args,
   scene_struct['directions']['below'] = tuple(-plane_up)
 
   # Add random jitter to lamp positions
+  # Support both "Lamp_*" (Blender 2.79) and "Light_*" (Blender 2.80+) naming
+  lamp_key = get_object_by_name('Lamp_Key', ['Light_Key', 'Key', 'KeyLight'])
+  lamp_back = get_object_by_name('Lamp_Back', ['Light_Back', 'Back', 'BackLight'])
+  lamp_fill = get_object_by_name('Lamp_Fill', ['Light_Fill', 'Fill', 'FillLight'])
+
   if args.key_light_jitter > 0:
     for i in range(3):
-      bpy.data.objects['Lamp_Key'].location[i] += rand(args.key_light_jitter)
+      lamp_key.location[i] += rand(args.key_light_jitter)
   if args.back_light_jitter > 0:
     for i in range(3):
-      bpy.data.objects['Lamp_Back'].location[i] += rand(args.back_light_jitter)
+      lamp_back.location[i] += rand(args.back_light_jitter)
   if args.fill_light_jitter > 0:
     for i in range(3):
-      bpy.data.objects['Lamp_Fill'].location[i] += rand(args.fill_light_jitter)
+      lamp_fill.location[i] += rand(args.fill_light_jitter)
 
   # Now make some random objects
   objects, blender_objects = add_random_objects(scene_struct, num_objects, args, camera)
@@ -510,52 +580,129 @@ def render_shadeless(blender_objects, path='flat.png'):
   # Cache the render args we are about to clobber
   old_filepath = render_args.filepath
   old_engine = render_args.engine
-  old_use_antialiasing = render_args.use_antialiasing
 
-  # Override some render settings to have flat shading
-  render_args.filepath = path
-  render_args.engine = 'BLENDER_RENDER'
-  render_args.use_antialiasing = False
+  if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0: Use Cycles with emission shaders for flat color
+    render_args.filepath = path
+    # Keep using Cycles but with minimal samples for speed
+    old_samples = bpy.context.scene.cycles.samples
+    bpy.context.scene.cycles.samples = 1
 
-  # Move the lights and ground to layer 2 so they don't render
-  utils.set_layer(bpy.data.objects['Lamp_Key'], 2)
-  utils.set_layer(bpy.data.objects['Lamp_Fill'], 2)
-  utils.set_layer(bpy.data.objects['Lamp_Back'], 2)
-  utils.set_layer(bpy.data.objects['Ground'], 2)
+    # Hide lights and ground using collections
+    lamp_key = get_object_by_name('Lamp_Key', ['Light_Key', 'Key', 'KeyLight'])
+    lamp_fill = get_object_by_name('Lamp_Fill', ['Light_Fill', 'Fill', 'FillLight'])
+    lamp_back = get_object_by_name('Lamp_Back', ['Light_Back', 'Back', 'BackLight'])
+    ground = get_object_by_name('Ground', ['ground', 'Floor', 'Plane'])
 
-  # Add random shadeless materials to all objects
-  object_colors = set()
-  old_materials = []
-  for i, obj in enumerate(blender_objects):
-    old_materials.append(obj.data.materials[0])
-    bpy.ops.material.new()
-    mat = bpy.data.materials['Material']
-    mat.name = 'Material_%d' % i
-    while True:
-      r, g, b = [random.random() for _ in range(3)]
-      if (r, g, b) not in object_colors: break
-    object_colors.add((r, g, b))
-    mat.diffuse_color = [r, g, b]
-    mat.use_shadeless = True
-    obj.data.materials[0] = mat
+    utils.set_layer(lamp_key, 2)
+    utils.set_layer(lamp_fill, 2)
+    utils.set_layer(lamp_back, 2)
+    utils.set_layer(ground, 2)
 
-  # Render the scene
-  bpy.ops.render.render(write_still=True)
+    # Add random emission materials to all objects
+    object_colors = set()
+    old_materials = []
+    for i, obj in enumerate(blender_objects):
+      old_materials.append(obj.data.materials[0])
 
-  # Undo the above; first restore the materials to objects
-  for mat, obj in zip(old_materials, blender_objects):
-    obj.data.materials[0] = mat
+      # Create a new emission material
+      mat = bpy.data.materials.new(name='FlatMaterial_%d' % i)
+      mat.use_nodes = True
 
-  # Move the lights and ground back to layer 0
-  utils.set_layer(bpy.data.objects['Lamp_Key'], 0)
-  utils.set_layer(bpy.data.objects['Lamp_Fill'], 0)
-  utils.set_layer(bpy.data.objects['Lamp_Back'], 0)
-  utils.set_layer(bpy.data.objects['Ground'], 0)
+      # Clear default nodes
+      nodes = mat.node_tree.nodes
+      nodes.clear()
 
-  # Set the render settings back to what they were
-  render_args.filepath = old_filepath
-  render_args.engine = old_engine
-  render_args.use_antialiasing = old_use_antialiasing
+      # Generate unique color
+      while True:
+        r, g, b = [random.random() for _ in range(3)]
+        if (r, g, b) not in object_colors:
+          break
+      object_colors.add((r, g, b))
+
+      # Create emission shader for flat color
+      emission = nodes.new('ShaderNodeEmission')
+      emission.inputs['Color'].default_value = [r, g, b, 1.0]
+      emission.inputs['Strength'].default_value = 1.0
+
+      # Create output node
+      output = nodes.new('ShaderNodeOutputMaterial')
+
+      # Link emission to output
+      mat.node_tree.links.new(emission.outputs['Emission'], output.inputs['Surface'])
+
+      obj.data.materials[0] = mat
+
+    # Render the scene
+    bpy.ops.render.render(write_still=True)
+
+    # Undo the above; restore materials
+    for mat, obj in zip(old_materials, blender_objects):
+      obj.data.materials[0] = mat
+
+    # Move lights and ground back
+    utils.set_layer(lamp_key, 0)
+    utils.set_layer(lamp_fill, 0)
+    utils.set_layer(lamp_back, 0)
+    utils.set_layer(ground, 0)
+
+    # Restore render settings
+    render_args.filepath = old_filepath
+    bpy.context.scene.cycles.samples = old_samples
+
+  else:
+    # Blender 2.79 and earlier: Original code
+    old_use_antialiasing = render_args.use_antialiasing
+
+    render_args.filepath = path
+    render_args.engine = 'BLENDER_RENDER'
+    render_args.use_antialiasing = False
+
+    # Move the lights and ground to layer 2 so they don't render
+    lamp_key = get_object_by_name('Lamp_Key', ['Light_Key', 'Key', 'KeyLight'])
+    lamp_fill = get_object_by_name('Lamp_Fill', ['Light_Fill', 'Fill', 'FillLight'])
+    lamp_back = get_object_by_name('Lamp_Back', ['Light_Back', 'Back', 'BackLight'])
+    ground = get_object_by_name('Ground', ['ground', 'Floor', 'Plane'])
+
+    utils.set_layer(lamp_key, 2)
+    utils.set_layer(lamp_fill, 2)
+    utils.set_layer(lamp_back, 2)
+    utils.set_layer(ground, 2)
+
+    # Add random shadeless materials to all objects
+    object_colors = set()
+    old_materials = []
+    for i, obj in enumerate(blender_objects):
+      old_materials.append(obj.data.materials[0])
+      bpy.ops.material.new()
+      mat = bpy.data.materials['Material']
+      mat.name = 'Material_%d' % i
+      while True:
+        r, g, b = [random.random() for _ in range(3)]
+        if (r, g, b) not in object_colors:
+          break
+      object_colors.add((r, g, b))
+      mat.diffuse_color = [r, g, b]
+      mat.use_shadeless = True
+      obj.data.materials[0] = mat
+
+    # Render the scene
+    bpy.ops.render.render(write_still=True)
+
+    # Undo the above; first restore the materials to objects
+    for mat, obj in zip(old_materials, blender_objects):
+      obj.data.materials[0] = mat
+
+    # Move the lights and ground back to layer 0
+    utils.set_layer(lamp_key, 0)
+    utils.set_layer(lamp_fill, 0)
+    utils.set_layer(lamp_back, 0)
+    utils.set_layer(ground, 0)
+
+    # Set the render settings back to what they were
+    render_args.filepath = old_filepath
+    render_args.engine = old_engine
+    render_args.use_antialiasing = old_use_antialiasing
 
   return object_colors
 
