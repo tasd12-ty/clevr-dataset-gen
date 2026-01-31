@@ -1,12 +1,22 @@
-# CLAUDE.md - AI Assistant Guide for CLEVR Dataset Generation
+# CLAUDE.md - AI 助手指南 / AI Assistant Guide
 
-## Repository Overview
+## 仓库概述 / Repository Overview
+
+本仓库包含用于生成 **CLEVR（组合语言和基础视觉推理）数据集** 和 **ORDINAL-SPATIAL 空间推理基准** 的代码。主要功能：
+
+1. 使用 Blender 渲染合成 3D 场景（支持 2.78 - 5.0+）
+2. 生成组合式自然语言问题及函数程序
+3. 评估视觉-语言模型（VLM）的序空间推理能力
+4. **VLM 约束提取智能体**（Task-1/2/3）
+
+---
 
 This repository contains code for generating the **CLEVR (Compositional Language and Elementary Visual Reasoning) dataset** and the **ORDINAL-SPATIAL spatial reasoning benchmark**. It provides tools for:
 
 1. Rendering synthetic 3D scenes using Blender (supports 2.78 - 5.0+)
 2. Generating compositional natural language questions with functional programs
 3. Evaluating Vision-Language Models (VLMs) on ordinal spatial reasoning tasks
+4. **VLM Constraint Extraction Agents** (Task-1/2/3)
 
 ## Directory Structure
 
@@ -36,19 +46,22 @@ clevr-dataset-gen/
 │   ├── synonyms.json          # Natural language synonyms
 │   └── CLEVR_1.0_templates/   # Question templates (~40 files)
 │
-├── ordinal_spatial/           # Spatial reasoning benchmark module
-│   ├── dsl/                   # Domain-Specific Language
-│   ├── evaluation/            # Metrics and consistency checking
-│   ├── generation/            # Constraint and dataset generation
-│   ├── baselines/             # Baseline implementations
-│   ├── prompts/               # VLM prompt templates
-│   ├── tasks/                 # Evaluation task runners
-│   ├── agents/                # VLM constraint extraction agents
-│   │   ├── vlm_constraint_agent.py  # Main VLM agent
-│   │   ├── cli.py             # Command-line interface
-│   │   └── prompts/           # Agent-specific prompts
-│   ├── scripts/               # CLI tools
-│   └── tests/                 # Unit tests
+├── ordinal_spatial/           # 空间推理基准模块 / Spatial reasoning benchmark
+│   ├── dsl/                   # 领域特定语言 / Domain-Specific Language
+│   ├── evaluation/            # 评估指标 / Metrics and consistency checking
+│   ├── generation/            # 约束生成 / Constraint and dataset generation
+│   ├── baselines/             # 基线模型 / Baseline implementations
+│   ├── prompts/               # VLM 提示模板 / VLM prompt templates
+│   ├── tasks/                 # 任务运行器 / Evaluation task runners
+│   ├── agents/                # VLM 约束提取智能体 / Constraint extraction agents
+│   │   ├── base.py            # 基类定义 / Base classes
+│   │   ├── vlm_constraint_agent.py    # VLM 智能体 (Task-2/3)
+│   │   ├── blender_constraint_agent.py # Blender 智能体 (Task-1)
+│   │   ├── cli.py             # 命令行接口 / CLI
+│   │   ├── prompts/           # 智能体提示词 / Agent prompts
+│   │   └── tests/             # 智能体测试 / Agent tests
+│   ├── scripts/               # 命令行工具 / CLI tools
+│   └── tests/                 # 单元测试 / Unit tests
 │
 └── images/                    # Example rendered images
 ```
@@ -137,25 +150,60 @@ python -m ordinal_spatial.scripts.run_baseline \
     --split test_iid
 ```
 
-### VLM Constraint Agent (Task-2/Task-3)
+### VLM 约束提取智能体 / VLM Constraint Agent (Task-1/2/3)
 
 ```bash
-# Single-view constraint extraction (Task-3)
+# Task-3: 单视角约束提取 / Single-view extraction
 python -m ordinal_spatial.agents.cli extract \
     --image scene.png \
     --output constraints.json \
     --tau 0.10
 
-# Multi-view constraint extraction (Task-2)
+# Task-2: 多视角约束提取 / Multi-view extraction
 python -m ordinal_spatial.agents.cli extract \
     --images view1.png view2.png view3.png \
     --output constraints.json
 
-# With custom model
+# 使用自定义模型 / With custom model
 python -m ordinal_spatial.agents.cli extract \
     --image scene.png \
     --model openai/gpt-4o \
     --output constraints.json
+```
+
+#### Task-1: Blender 真值提取 / Ground Truth Extraction
+
+```python
+from ordinal_spatial.agents import BlenderConstraintAgent
+
+agent = BlenderConstraintAgent()
+
+# 从 CLEVR 场景文件提取 / Extract from CLEVR scenes
+constraints = agent.extract_from_clevr_scenes(
+    "output/CLEVR_scenes.json",
+    tau=0.10
+)
+
+# 从 .blend 文件提取 / Extract from .blend file
+constraints = agent.extract_from_blend_file("scene.blend", tau=0.10)
+```
+
+#### Task-2/3: VLM 约束提取 / VLM Extraction
+
+```python
+from ordinal_spatial.agents import VLMConstraintAgent, VLMAgentConfig
+
+config = VLMAgentConfig(model="google/gemma-3-27b-it")
+agent = VLMConstraintAgent(config)
+
+# 单视角 / Single view
+result = agent.extract_from_single_view("scene.png", tau=0.10)
+
+# 多视角 / Multi view
+result = agent.extract_from_multi_view(
+    ["view1.png", "view2.png", "view3.png"],
+    tau=0.10
+)
 ```
 
 ## Key API Changes for Blender 5.0
@@ -266,17 +314,21 @@ print('Success!')
 "
 ```
 
-## Key Files Reference
+## 关键文件参考 / Key Files Reference
 
-| File | Purpose |
-|------|---------|
-| `image_generation/render_images.py` | Main rendering script (version-aware) |
-| `image_generation/utils.py` | Blender utilities (version-aware) |
-| `image_generation/create_base_scene_blender5.py` | Generate Blender 5.0 base scene |
-| `image_generation/create_materials_blender5.py` | Generate Blender 5.0 materials |
-| `image_generation/create_shapes_blender5.py` | Generate Blender 5.0 shapes |
-| `question_generation/generate_questions.py` | Question synthesis engine |
-| `ordinal_spatial/dsl/schema.py` | Core data models |
+| 文件 / File | 用途 / Purpose |
+|-------------|----------------|
+| `image_generation/render_images.py` | 主渲染脚本（版本适配）/ Main rendering script |
+| `image_generation/utils.py` | Blender 工具函数 / Blender utilities |
+| `image_generation/create_base_scene_blender5.py` | 生成 Blender 5.0 基础场景 |
+| `image_generation/create_materials_blender5.py` | 生成 Blender 5.0 材质 |
+| `image_generation/create_shapes_blender5.py` | 生成 Blender 5.0 形状 |
+| `question_generation/generate_questions.py` | 问题生成引擎 / Question synthesis |
+| `ordinal_spatial/dsl/schema.py` | 核心数据模型 / Core data models |
+| `ordinal_spatial/agents/base.py` | 智能体基类 / Agent base classes |
+| `ordinal_spatial/agents/vlm_constraint_agent.py` | VLM 约束提取 (Task-2/3) |
+| `ordinal_spatial/agents/blender_constraint_agent.py` | Blender 真值提取 (Task-1) |
+| `ordinal_spatial/agents/cli.py` | 智能体命令行接口 / Agent CLI |
 
 ## Blender 5.0 Key Fixes (vs Original CLEVR)
 
