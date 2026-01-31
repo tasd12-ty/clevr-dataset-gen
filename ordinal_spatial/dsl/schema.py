@@ -237,6 +237,95 @@ class OcclusionConstraint(BaseModel):
 
 
 # =============================================================================
+# Extended Constraint Types (PDF Section 4)
+# =============================================================================
+
+class AxialRelation(str, Enum):
+    """
+    二元轴向偏序关系。
+
+    Binary axial ordering relations for spatial positioning.
+    Based on cardinal/depth directions.
+    """
+    LEFT_OF = "left_of"
+    RIGHT_OF = "right_of"
+    ABOVE = "above"
+    BELOW = "below"
+    IN_FRONT_OF = "in_front_of"
+    BEHIND = "behind"
+
+
+class AxialConstraint(BaseModel):
+    """
+    轴向偏序约束。
+
+    Axial ordering constraint between two objects.
+    Example: obj1 is left_of obj2
+    """
+    obj1: str
+    obj2: str
+    relation: AxialRelation
+
+    def inverse(self) -> "AxialConstraint":
+        """Return the inverse constraint."""
+        inverse_map = {
+            AxialRelation.LEFT_OF: AxialRelation.RIGHT_OF,
+            AxialRelation.RIGHT_OF: AxialRelation.LEFT_OF,
+            AxialRelation.ABOVE: AxialRelation.BELOW,
+            AxialRelation.BELOW: AxialRelation.ABOVE,
+            AxialRelation.IN_FRONT_OF: AxialRelation.BEHIND,
+            AxialRelation.BEHIND: AxialRelation.IN_FRONT_OF,
+        }
+        return AxialConstraint(
+            obj1=self.obj2,
+            obj2=self.obj1,
+            relation=inverse_map[self.relation]
+        )
+
+
+class SizeConstraint(BaseModel):
+    """
+    二元大小比较约束。
+
+    Binary size comparison constraint.
+    Represents: bigger_obj is visually larger than smaller_obj.
+    """
+    bigger: str
+    smaller: str
+
+    def inverse(self) -> "SizeConstraint":
+        """Return the inverse (swapped) constraint."""
+        return SizeConstraint(bigger=self.smaller, smaller=self.bigger)
+
+
+class CloserConstraint(BaseModel):
+    """
+    三元距离比较约束 (closer triplet)。
+
+    Ternary distance comparison constraint.
+    Represents: d(anchor, closer_obj) < d(anchor, farther_obj)
+
+    This is different from QRR (quaternary) which compares two pairs.
+    """
+    anchor: str      # Reference point A
+    closer: str      # Object B that is closer to A
+    farther: str     # Object C that is farther from A
+
+    def to_qrr_style(self) -> Dict[str, Any]:
+        """
+        Convert to QRR-style representation for compatibility.
+
+        closer(A, B, C) means d(A,B) < d(A,C)
+        """
+        return {
+            "pair1": [self.anchor, self.closer],
+            "pair2": [self.anchor, self.farther],
+            "metric": "dist3D",
+            "comparator": "<",
+        }
+
+
+# =============================================================================
 # Camera Specification
 # =============================================================================
 
@@ -269,12 +358,17 @@ class WorldConstraints(BaseModel):
     View-invariant 3D constraints.
 
     These constraints hold regardless of camera position:
-    - 3D distance comparisons
+    - 3D distance comparisons (QRR)
     - Topological relationships (touching, disjoint)
     - Physical size ordering
+    - 3D axial relations
+    - Ternary closer relations
     """
     qrr: List[QRRConstraintSchema] = Field(default_factory=list)
     topology: List[TopologyConstraint] = Field(default_factory=list)
+    size: List[SizeConstraint] = Field(default_factory=list)
+    closer: List[CloserConstraint] = Field(default_factory=list)
+    axial: List[AxialConstraint] = Field(default_factory=list)
 
 
 class ViewConstraints(BaseModel):
@@ -285,11 +379,14 @@ class ViewConstraints(BaseModel):
     - 2D image-plane distances
     - Clock positions in image
     - Occlusion relationships
+    - 2D axial relations (in image plane)
     """
     camera: CameraParams
     qrr_2d: List[QRRConstraintSchema] = Field(default_factory=list)
     trr: List[TRRConstraintSchema] = Field(default_factory=list)
     occlusion: List[OcclusionConstraint] = Field(default_factory=list)
+    axial_2d: List[AxialConstraint] = Field(default_factory=list)
+    size_apparent: List[SizeConstraint] = Field(default_factory=list)
     image_path: Optional[str] = None
     depth_path: Optional[str] = None
 
@@ -482,11 +579,17 @@ class OSDPrediction(BaseModel):
     T2 任务（完整 OSD 提取）的预测结果。
 
     Prediction for T2 task (full OSD extraction).
+    Supports all constraint types from the formal DSL.
     """
     scene_id: str
     objects: List[str]
     qrr: List[QRRConstraintSchema] = Field(default_factory=list)
     trr: List[TRRConstraintSchema] = Field(default_factory=list)
+    topology: List[TopologyConstraint] = Field(default_factory=list)
+    occlusion: List[OcclusionConstraint] = Field(default_factory=list)
+    axial: List[AxialConstraint] = Field(default_factory=list)
+    size: List[SizeConstraint] = Field(default_factory=list)
+    closer: List[CloserConstraint] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0, default=1.0)
 
 
@@ -507,6 +610,9 @@ def generate_json_schemas(output_dir: str = "."):
         "trr_query.json": TRRQuery.model_json_schema(),
         "osd.json": OrdinalSceneDescription.model_json_schema(),
         "prediction.json": OSDPrediction.model_json_schema(),
+        "axial_constraint.json": AxialConstraint.model_json_schema(),
+        "size_constraint.json": SizeConstraint.model_json_schema(),
+        "closer_constraint.json": CloserConstraint.model_json_schema(),
     }
 
     for filename, schema in schemas.items():
