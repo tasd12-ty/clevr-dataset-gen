@@ -253,6 +253,83 @@ print('Success!')
 | `question_generation/generate_questions.py` | Question synthesis engine |
 | `ordinal_spatial/dsl/schema.py` | Core data models |
 
+## Blender 5.0 Key Fixes (vs Original CLEVR)
+
+### 1. Object Grounding Fix
+
+**Problem**: Objects were floating above the ground plane.
+
+**Root Cause**: Original CLEVR shapes had origin at center; v5 shapes have origin at bottom.
+
+**Fix Location**: `image_generation/utils.py:154-156`
+
+```python
+# Original CLEVR (origin at center):
+bpy.ops.transform.translate(value=(x, y, scale))
+
+# v5 Fix (origin at bottom):
+bpy.ops.transform.translate(value=(x, y, 0))
+```
+
+**Related Files**:
+- `create_shapes_blender5.py`: Sets origin to bottom via `origin_set(type='ORIGIN_CURSOR')`
+- `create_base_scene_blender5.py`: Ground plane at z=0
+
+### 2. Recursion Limit Fix
+
+**Problem**: Infinite recursion when placing objects due to occlusion retry loop.
+
+**Fix Location**: `image_generation/render_images.py:399-407`
+
+```python
+def add_random_objects(scene_struct, num_objects, args, camera, _retry_count=0):
+  MAX_OCCLUSION_RETRIES = 50
+  if _retry_count >= MAX_OCCLUSION_RETRIES:
+    raise RuntimeError("Failed to place objects after 50 attempts")
+```
+
+### 3. Graceful Scene Failure Handling
+
+**Problem**: Single scene failure crashed entire batch.
+
+**Fix Location**: `image_generation/render_images.py:195-225`
+
+```python
+try:
+  render_scene(args, ...)
+  successful_scenes += 1
+except RuntimeError as e:
+  print(f"Warning: Failed to render scene {i}: {e}")
+  failed_scenes += 1
+  continue
+```
+
+### 4. Skip Visibility Check Option
+
+**Problem**: Visibility check is slow and often fails.
+
+**Fix**: Set `--min_pixels_per_object 0` to skip visibility checking.
+
+**Fix Location**: `image_generation/render_images.py:565-567`
+
+```python
+if min_pixels_per_object <= 0:
+  return True  # Skip visibility check
+```
+
+### 5. Material Node Localization Fix
+
+**Problem**: Node name `'Material Output'` is localized (e.g., '材质输出' in Chinese).
+
+**Fix Location**: `image_generation/utils.py:197-199`
+
+```python
+# Find by type instead of name
+for n in mat.node_tree.nodes:
+  if n.type == 'OUTPUT_MATERIAL':
+    output_node = n
+```
+
 ## Troubleshooting
 
 ### ImportError: cannot import utils

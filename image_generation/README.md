@@ -329,6 +329,38 @@ Ensure the `clevr.pth` file is in the correct site-packages directory and contai
 
 This is normal behavior when objects overlap or are occluded. The script retries placement up to `--max_retries` times.
 
+### Objects appear to be floating (Blender 5.0)
+
+This was fixed in the v5 code. The fix is in `utils.py:154-156`:
+
+```python
+# v5 shapes have origin at bottom, so z=0 places them on ground
+bpy.ops.transform.translate(value=(x, y, 0))
+```
+
+If objects still float, verify that:
+1. You're using `data/shapes_v5/` directory
+2. Shapes were generated with `create_shapes_blender5.py` (origin at bottom)
+
+### Rendering fails with RecursionError
+
+The script now limits occlusion retries to 50 attempts. If you still hit this limit:
+
+```bash
+# Option 1: Skip visibility check (fastest)
+--min_pixels_per_object 0
+
+# Option 2: Use fewer objects
+--min_objects 2 --max_objects 4
+
+# Option 3: Reduce margin requirements
+--margin 0.2
+```
+
+### Material Output node not found (Blender 5.0 localized)
+
+If you see "Could not find Material Output node", the code now handles this by finding nodes by type instead of name. Ensure you have the latest `utils.py`.
+
 ## Additional Documentation
 
 - [Blender 5.0 Compatibility Guide](README_BLENDER5.md)
