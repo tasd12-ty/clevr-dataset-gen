@@ -4,7 +4,7 @@
 
 This repository contains code for generating the **CLEVR (Compositional Language and Elementary Visual Reasoning) dataset** and the **ORDINAL-SPATIAL spatial reasoning benchmark**. It provides tools for:
 
-1. Rendering synthetic 3D scenes using Blender
+1. Rendering synthetic 3D scenes using Blender (supports 2.78 - 5.0+)
 2. Generating compositional natural language questions with functional programs
 3. Evaluating Vision-Language Models (VLMs) on ordinal spatial reasoning tasks
 
@@ -13,10 +13,21 @@ This repository contains code for generating the **CLEVR (Compositional Language
 ```
 clevr-dataset-gen/
 ├── image_generation/          # Blender-based image rendering
-│   ├── render_images.py       # Main rendering script
+│   ├── render_images.py       # Main rendering script (Blender 2.78-5.0 compatible)
+│   ├── utils.py               # Blender utilities (version-aware)
 │   ├── collect_scenes.py      # Scene collection utility
-│   ├── utils.py               # Blender utilities
-│   └── data/                  # Blender assets (shapes, materials)
+│   ├── create_base_scene_blender5.py    # Generate v5 base scene
+│   ├── create_materials_blender5.py     # Generate v5 materials
+│   ├── create_shapes_blender5.py        # Generate v5 shapes
+│   ├── setup_blender5.sh      # One-click Blender 5.0 setup
+│   └── data/
+│       ├── base_scene.blend   # Base scene (Blender 2.78)
+│       ├── base_scene_v5.blend # Base scene (Blender 5.0+)
+│       ├── materials/         # Materials (Blender 2.78)
+│       ├── materials_v5/      # Materials (Blender 5.0+)
+│       ├── shapes/            # Shapes (Blender 2.78)
+│       ├── shapes_v5/         # Shapes (Blender 5.0+)
+│       └── properties.json    # Object property definitions
 │
 ├── question_generation/       # Question synthesis
 │   ├── generate_questions.py  # Main question generation script
@@ -27,74 +38,73 @@ clevr-dataset-gen/
 │
 ├── ordinal_spatial/           # Spatial reasoning benchmark module
 │   ├── dsl/                   # Domain-Specific Language
-│   │   ├── schema.py          # Pydantic models (ObjectSpec, OSD)
-│   │   ├── comparators.py     # Tolerance algebra
-│   │   └── predicates.py      # QRR/TRR computation
 │   ├── evaluation/            # Metrics and consistency checking
-│   │   ├── metrics.py         # T1/T2/T3 evaluation metrics
-│   │   └── consistency.py     # Constraint graph validation
 │   ├── generation/            # Constraint and dataset generation
-│   │   ├── constraint_extractor.py
-│   │   ├── degeneracy_checker.py
-│   │   └── difficulty_control.py
 │   ├── baselines/             # Baseline implementations
-│   │   ├── oracle.py          # Ground truth baseline
-│   │   ├── vlm_direct.py      # VLM direct prediction
-│   │   ├── hybrid.py          # Predict-verify-repair loop
-│   │   └── embedding.py       # Ordinal embedding optimization
 │   ├── prompts/               # VLM prompt templates
-│   ├── tasks/                 # Evaluation task runners (T1, T2, T3)
+│   ├── tasks/                 # Evaluation task runners
 │   ├── scripts/               # CLI tools
-│   └── tests/                 # Unit tests (70+ tests)
+│   └── tests/                 # Unit tests
 │
 └── images/                    # Example rendered images
 ```
 
-## Key Concepts
+## Blender Compatibility
 
-### CLEVR Questions
-- Questions are generated from templates with functional program representations
-- Parameters: Size, Color, Material, Shape, Relation
-- Outputs: JSON with question text, answer, and functional program
+| Version | Status | Resource Files | Notes |
+|---------|--------|----------------|-------|
+| 2.78c | Fully Supported | `data/*.blend`, `data/materials/`, `data/shapes/` | Original version |
+| 2.79b | Fully Supported | Same as 2.78 | Last legacy API version |
+| 2.80-3.x | Supported | `data/*_v5.blend`, `data/materials_v5/`, `data/shapes_v5/` | New API |
+| 4.x | Supported | Same as v5 | |
+| **5.0+** | **Supported** | Same as v5 | Tested with 5.0.1 |
 
-### ORDINAL-SPATIAL Benchmark
-
-**Tolerance-Based Comparison (tau)**:
-- `a <_tau b` iff `a < b × (1 - tau)`
-- `a ~=_tau b` iff `|a - b| ≤ tau × max(a, b)`
-- `a >_tau b` iff `a > b × (1 + tau)`
-- Presets: strict (0.05), standard (0.10), relaxed (0.20)
-
-**Quaternary Relative Relations (QRR)**:
-- Compares distances between two pairs: `dist(A,B)` vs `dist(C,D)`
-- Metrics: DIST_3D, DIST_2D, DEPTH_GAP, SIZE_RATIO
-
-**Ternary Clock Relations (TRR)**:
-- Directional relations using 12-hour clock model
-- Target position relative to reference axis
-
-**Tasks**:
-- T1-Q: QRR classification
-- T1-C: TRR classification (hour + quadrant)
-- T2: Constraint extraction from images
-- T3: Ordinal reconstruction
+The code uses `IS_BLENDER_280_OR_LATER` flag to automatically select the correct API.
 
 ## Development Workflows
 
-### Image Generation (Blender)
+### Image Generation (Blender 5.0+)
 
 ```bash
-# Setup: Add image_generation to Blender's Python path
-echo $PWD/image_generation >> $BLENDER/$VERSION/python/lib/python3.5/site-packages/clevr.pth
-
-# Render images (CPU)
 cd image_generation
+
+# Step 1: Generate compatible resource files (one-time setup)
+./setup_blender5.sh /path/to/blender
+# Or manually:
+blender --background --python create_base_scene_blender5.py
+blender --background --python create_materials_blender5.py
+blender --background --python create_shapes_blender5.py
+
+# Step 2: Add Python path (one-time setup)
+# Linux:
+echo $PWD >> ~/.config/blender/5.0/python/lib/python3.11/site-packages/clevr.pth
+
+# Step 3: Render images
+blender --background --python render_images.py -- \
+    --base_scene_blendfile data/base_scene_v5.blend \
+    --material_dir data/materials_v5 \
+    --shape_dir data/shapes_v5 \
+    --num_images 10
+
+# With GPU acceleration
+blender --background --python render_images.py -- \
+    --base_scene_blendfile data/base_scene_v5.blend \
+    --material_dir data/materials_v5 \
+    --shape_dir data/shapes_v5 \
+    --num_images 10 \
+    --use_gpu 1
+```
+
+### Image Generation (Blender 2.78-2.79 Legacy)
+
+```bash
+cd image_generation
+
+# Setup
+echo $PWD >> $BLENDER/$VERSION/python/lib/python3.5/site-packages/clevr.pth
+
+# Render
 blender --background --python render_images.py -- --num_images 10
-
-# Render with GPU acceleration
-blender --background --python render_images.py -- --num_images 10 --use_gpu 1
-
-# Output: output/images/*.png, output/CLEVR_scenes.json
 ```
 
 ### Question Generation
@@ -121,26 +131,22 @@ python -m ordinal_spatial.scripts.run_baseline \
     --task t1-q \
     --data ./data \
     --split test_iid
-
-# Evaluate predictions
-python -m ordinal_spatial.scripts.evaluate \
-    --predictions results/predictions.json \
-    --ground-truth results/ground_truth.json \
-    --task t1-q
 ```
 
-### Running Tests
+## Key API Changes for Blender 5.0
 
-```bash
-# Run all tests
-python -m pytest ordinal_spatial/tests/ -v
-
-# Run specific test file
-python -m pytest ordinal_spatial/tests/test_dsl.py -v
-
-# Run with coverage
-pytest --cov=ordinal_spatial ordinal_spatial/tests/
-```
+| Blender 2.79 | Blender 5.0 | Location |
+|--------------|-------------|----------|
+| `obj.select = True` | `obj.select_set(True)` | utils.py |
+| `scene.objects.active = obj` | `view_layer.objects.active = obj` | utils.py |
+| `user_preferences` | `preferences` | render_images.py |
+| `BLENDER_RENDER` engine | Use `CYCLES` with emission shaders | render_images.py |
+| `obj.layers[i]` | Collections system | utils.py |
+| `mat.use_shadeless = True` | Emission shader nodes | render_images.py |
+| `primitive_plane_add(radius=)` | `primitive_plane_add(size=)` | render_images.py |
+| `matrix * vector` | `matrix @ vector` | render_images.py |
+| `bpy.ops.material.new()` | `bpy.data.materials.new()` | utils.py |
+| Node name `'Material Output'` | Use type `'OUTPUT_MATERIAL'` | utils.py |
 
 ## Code Conventions
 
@@ -148,75 +154,46 @@ pytest --cov=ordinal_spatial ordinal_spatial/tests/
 - **Indentation**: 2 spaces (not tabs)
 - **Line length**: 80 characters max
 - **Naming**: snake_case for functions, PascalCase for classes
-- **Type hints**: Full type annotations in ordinal_spatial module
 
-### Docstrings
-The ordinal_spatial module uses bilingual docstrings (English + Chinese) with Google/NumPy style:
+### Version-Aware Code Pattern
 
 ```python
-def compute_qrr(obj_a, obj_b, obj_c, obj_d, metric, tau):
-    """
-    Compute Quaternary Relative Relation between two object pairs.
-    计算两对物体之间的四元相对关系。
+# At module level
+BLENDER_VERSION = bpy.app.version
+IS_BLENDER_280_OR_LATER = BLENDER_VERSION >= (2, 80, 0)
 
-    Args:
-        obj_a: First object of pair 1
-        obj_b: Second object of pair 1
-        ...
-
-    Returns:
-        Comparator: LT, APPROX, or GT
-    """
+# In functions
+if IS_BLENDER_280_OR_LATER:
+    # Blender 2.80+ / 5.0 code
+    obj.select_set(True)
+else:
+    # Blender 2.79 and earlier
+    obj.select = True
 ```
 
-### Design Patterns
+### Object Name Compatibility
 
-**Pydantic Models** for data validation:
 ```python
-class ObjectSpec(BaseModel):
-    id: str
-    position_3d: List[float]
-    shape: str
-    color: str
-    size: str
-```
+def get_object_by_name(name, alternative_names=None):
+    """Get object with fallback to alternative names."""
+    if name in bpy.data.objects:
+        return bpy.data.objects[name]
+    if alternative_names:
+        for alt_name in alternative_names:
+            if alt_name in bpy.data.objects:
+                return bpy.data.objects[alt_name]
+    raise KeyError(f"Object not found: {name}")
 
-**Dataclasses** for configuration:
-```python
-@dataclass
-class T1Config:
-    tau: float = 0.10
-    output_dir: Optional[str] = None
-```
-
-**Enums** for type-safe options:
-```python
-class Comparator(Enum):
-    LT = "<"
-    APPROX = "~="
-    GT = ">"
-```
-
-### Import Organization
-```python
-# Standard library
-from typing import Dict, List, Optional
-from dataclasses import dataclass
-
-# Third-party
-import numpy as np
-from pydantic import BaseModel
-
-# Project imports
-from ordinal_spatial.dsl.comparators import Comparator, compare
+# Usage
+lamp_key = get_object_by_name('Lamp_Key', ['Light_Key', 'Key'])
 ```
 
 ## Dependencies
 
 ### External Tools
-- **Blender 2.78+**: Required for image rendering
+- **Blender 2.78-5.0+**: Required for image rendering
 - **Python 3.5+**: For original CLEVR code
-- **Python 3.7+**: Recommended for ordinal_spatial module
+- **Python 3.7+**: For ordinal_spatial module
 
 ### Python Packages (ordinal_spatial)
 ```
@@ -232,55 +209,66 @@ pytest>=7.0.0
 
 ## Common Tasks for AI Assistants
 
-### Adding a New Baseline
-1. Create new file in `ordinal_spatial/baselines/`
-2. Implement the baseline class with `predict()` method
-3. Register in `ordinal_spatial/baselines/__init__.py`
-4. Add tests in `ordinal_spatial/tests/`
+### Adding Support for New Blender Version
 
-### Adding a New Question Template
-1. Create template file in `question_generation/CLEVR_1.0_templates/`
-2. Define text templates, program templates, and constraints
-3. Update `metadata.json` if adding new functions
+1. Test module import in new Blender version
+2. Check for API deprecation warnings
+3. Update `IS_BLENDER_280_OR_LATER` checks if needed
+4. Update resource generation scripts if needed
+5. Test rendering pipeline end-to-end
 
 ### Modifying Scene Generation
+
 1. Edit `image_generation/render_images.py` for rendering changes
-2. Update `image_generation/data/` for new shapes/materials
-3. Scene ground truth is output to `output/CLEVR_scenes.json`
+2. For Blender 5.0+, may need to update `create_*_blender5.py` scripts
+3. Test with both legacy and modern Blender versions
 
-### Adding a New Evaluation Metric
-1. Add metric class in `ordinal_spatial/evaluation/metrics.py`
-2. Follow pattern of existing T1/T2/T3 metrics
-3. Add tests for the new metric
+### Debugging Blender Issues
 
-## Git Workflow
+```bash
+# Check Blender version
+blender --version
 
-1. Fork the repo and create your branch from `master`
-2. Add tests for new code
-3. Update documentation for API changes
-4. Ensure test suite passes
-5. Follow coding style guidelines
-6. Complete the Contributor License Agreement
+# Test module import
+blender --background --python-expr "import bpy; print(bpy.app.version)"
+
+# Test resource loading
+blender --background --python-expr "
+import bpy, sys
+sys.path.insert(0, '/path/to/image_generation')
+import utils
+print('Success!')
+"
+```
 
 ## Key Files Reference
 
 | File | Purpose |
 |------|---------|
-| `image_generation/render_images.py` | Main Blender rendering script |
+| `image_generation/render_images.py` | Main rendering script (version-aware) |
+| `image_generation/utils.py` | Blender utilities (version-aware) |
+| `image_generation/create_base_scene_blender5.py` | Generate Blender 5.0 base scene |
+| `image_generation/create_materials_blender5.py` | Generate Blender 5.0 materials |
+| `image_generation/create_shapes_blender5.py` | Generate Blender 5.0 shapes |
 | `question_generation/generate_questions.py` | Question synthesis engine |
-| `ordinal_spatial/dsl/schema.py` | Core data models (ObjectSpec, OSD) |
-| `ordinal_spatial/dsl/comparators.py` | Tolerance-based comparison algebra |
-| `ordinal_spatial/dsl/predicates.py` | QRR/TRR computation functions |
-| `ordinal_spatial/evaluation/metrics.py` | All evaluation metrics |
-| `ordinal_spatial/evaluation/consistency.py` | Graph-based constraint validation |
+| `ordinal_spatial/dsl/schema.py` | Core data models |
 
 ## Troubleshooting
 
-### Blender Python Path Issues
-Ensure the `clevr.pth` file is in the correct site-packages directory for your Blender version.
+### ImportError: cannot import utils
+Ensure `clevr.pth` is in the correct Blender Python site-packages directory.
 
 ### GPU Rendering Issues
-Verify CUDA is properly installed and use `--use_gpu 1` flag.
+1. Verify GPU drivers
+2. Check `--use_gpu 1` flag
+3. Code tries CUDA → OptiX → HIP → OneAPI automatically
 
-### Import Errors in ordinal_spatial
-Install all dependencies: `pip install -r ordinal_spatial/requirements.txt`
+### Material/Node Errors in Blender 5.0
+- Ensure using `data/materials_v5/` directory
+- Node names may be localized; code finds nodes by type, not name
+- Materials need `use_fake_user = True` to be saved
+
+### Blender Crashes
+- Reduce `--render_num_samples` for testing
+- Check memory availability
+- Try CPU rendering first (`--use_gpu 0`)

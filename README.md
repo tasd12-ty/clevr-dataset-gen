@@ -48,44 +48,91 @@ If you find this code useful in your research then please cite
 }
 ```
 
-All code was developed and tested on OSX and Ubuntu 16.04.
+## Blender Version Compatibility
+
+| Blender Version | Status | Notes |
+|-----------------|--------|-------|
+| 2.78c | Fully Supported | Original development version |
+| 2.79b | Fully Supported | Last version with original API |
+| 2.80 - 3.x | Supported | Requires v5 resource files |
+| 4.x | Supported | Requires v5 resource files |
+| **5.0+** | **Supported** | Requires v5 resource files |
+
+Code has been updated to automatically detect Blender version and use the appropriate API.
 
 ## Step 1: Generating Images
+
 First we render synthetic images using [Blender](https://www.blender.org/), outputting both rendered images as well as a JSON file containing ground-truth scene information for each image.
 
-Blender ships with its own installation of Python which is used to execute scripts that interact with Blender; you'll need to add the `image_generation` directory to Python path of Blender's bundled Python. The easiest way to do this is by adding a `.pth` file to the `site-packages` directory of Blender's Python, like this:
+### Setup
 
+Blender ships with its own installation of Python which is used to execute scripts that interact with Blender. You'll need to add the `image_generation` directory to the Python path of Blender's bundled Python.
+
+#### For Blender 2.78-2.79 (Legacy)
 ```bash
 echo $PWD/image_generation >> $BLENDER/$VERSION/python/lib/python3.5/site-packages/clevr.pth
 ```
 
-where `$BLENDER` is the directory where Blender is installed and `$VERSION` is your Blender version; for example on OSX you might run:
-
+#### For Blender 5.0+ (Modern)
 ```bash
-echo $PWD/image_generation >> /Applications/blender/blender.app/Contents/Resources/2.78/python/lib/python3.5/site-packages/clevr.pth
+# Linux
+echo $PWD/image_generation >> ~/.config/blender/5.0/python/lib/python3.11/site-packages/clevr.pth
+
+# macOS
+echo $PWD/image_generation >> /Applications/Blender.app/Contents/Resources/5.0/python/lib/python3.11/site-packages/clevr.pth
+
+# Windows (run from Blender Python)
+# See image_generation/README_BLENDER5.md for details
 ```
 
-You can then render some images like this:
+### Blender 5.0+ Quick Start
+
+For Blender 5.0+, first generate the compatible resource files:
+
+```bash
+cd image_generation
+
+# Option 1: One-click setup (Linux/macOS)
+./setup_blender5.sh /path/to/blender
+
+# Option 2: Manual setup
+blender --background --python create_base_scene_blender5.py
+blender --background --python create_materials_blender5.py
+blender --background --python create_shapes_blender5.py
+```
+
+Then render images:
+
+```bash
+blender --background --python render_images.py -- \
+    --base_scene_blendfile data/base_scene_v5.blend \
+    --material_dir data/materials_v5 \
+    --shape_dir data/shapes_v5 \
+    --num_images 10
+```
+
+### Blender 2.78-2.79 (Legacy)
 
 ```bash
 cd image_generation
 blender --background --python render_images.py -- --num_images 10
 ```
 
-On OSX the `blender` binary is located inside the blender.app directory; for convenience you may want to
-add the following alias to your `~/.bash_profile` file:
+### GPU Acceleration
 
-```bash
-alias blender='/Applications/blender/blender.app/Contents/MacOS/blender'
-```
-
-If you have an NVIDIA GPU with CUDA installed then you can use the GPU to accelerate rendering like this:
+If you have a GPU with CUDA/OptiX/HIP installed, you can accelerate rendering:
 
 ```bash
 blender --background --python render_images.py -- --num_images 10 --use_gpu 1
 ```
 
-After this command terminates you should have ten freshly rendered images stored in `output/images` like these:
+Supported GPU backends (Blender 5.0+):
+- NVIDIA CUDA
+- NVIDIA OptiX
+- AMD HIP
+- Intel OneAPI
+
+After rendering, you should have images stored in `output/images` like these:
 
 <div align="center">
   <img src="images/img1.png" width="260px">
@@ -102,8 +149,9 @@ The file `output/CLEVR_scenes.json` will contain ground-truth scene information 
 You can find [more details about image rendering here](image_generation/README.md).
 
 ## Step 2: Generating Questions
+
 Next we generate questions, functional programs, and answers for the rendered images generated in the previous step.
-This step takes as input the single JSON file containing all ground-truth scene information, and outputs a JSON file 
+This step takes as input the single JSON file containing all ground-truth scene information, and outputs a JSON file
 containing questions, answers, and functional programs for the questions in a single JSON file.
 
 You can generate questions like this:
@@ -116,3 +164,53 @@ python generate_questions.py
 The file `output/CLEVR_questions.json` will then contain questions for the generated images.
 
 You can [find more details about question generation here](question_generation/README.md).
+
+## Additional Modules
+
+### ORDINAL-SPATIAL Benchmark
+
+This repository also includes the **ORDINAL-SPATIAL** module for evaluating Vision-Language Models on ordinal spatial reasoning tasks. See [ordinal_spatial/README.md](ordinal_spatial/README.md) for details.
+
+```bash
+# Quick start
+pip install -r ordinal_spatial/requirements.txt
+python -m ordinal_spatial.scripts.generate_dataset --small --output-dir ./data
+```
+
+## Project Structure
+
+```
+clevr-dataset-gen/
+├── image_generation/           # Blender-based image rendering
+│   ├── render_images.py        # Main rendering script
+│   ├── utils.py                # Blender utilities
+│   ├── create_*_blender5.py    # Blender 5.0 setup scripts
+│   ├── setup_blender5.sh       # One-click setup
+│   └── data/
+│       ├── base_scene.blend    # Scene for Blender 2.78
+│       ├── base_scene_v5.blend # Scene for Blender 5.0+
+│       ├── materials/          # Materials for Blender 2.78
+│       ├── materials_v5/       # Materials for Blender 5.0+
+│       ├── shapes/             # Shapes for Blender 2.78
+│       └── shapes_v5/          # Shapes for Blender 5.0+
+│
+├── question_generation/        # Question synthesis
+│   ├── generate_questions.py   # Main script
+│   └── CLEVR_1.0_templates/    # Question templates
+│
+├── ordinal_spatial/            # Spatial reasoning benchmark
+│
+└── images/                     # Example images
+```
+
+## Documentation
+
+- [Image Generation Guide](image_generation/README.md)
+- [Blender 5.0 Compatibility Guide](image_generation/README_BLENDER5.md)
+- [Question Generation Guide](question_generation/README.md)
+- [ORDINAL-SPATIAL Benchmark](ordinal_spatial/README.md)
+- [Complete Chinese Documentation](CLEVR数据集生成工具完整报告.md)
+
+## License
+
+This project is licensed under the BSD License - see the [LICENSE](LICENSE) file for details.
