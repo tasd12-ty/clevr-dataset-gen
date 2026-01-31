@@ -22,6 +22,44 @@ in a JSON metadata file.
 # value from this node.
 
 
+class HandlerRegistry:
+  """
+  Registry for question answering handlers.
+
+  Supports both decorator-based registration and direct registration,
+  allowing reuse with different sets of node types by creating separate
+  registry instances.
+  """
+
+  def __init__(self):
+    self._handlers = {}
+
+  def register(self, name):
+    """Decorator to register a handler function."""
+    def decorator(func):
+      self._handlers[name] = func
+      return func
+    return decorator
+
+  def register_handler(self, name, handler):
+    """Register a handler directly (for factory-generated handlers)."""
+    self._handlers[name] = handler
+
+  def __contains__(self, name):
+    return name in self._handlers
+
+  def __getitem__(self, name):
+    return self._handlers[name]
+
+  def get(self, name, default=None):
+    return self._handlers.get(name, default)
+
+
+# Create the default handler registry
+execute_handlers = HandlerRegistry()
+
+
+@execute_handlers.register('scene')
 def scene_handler(scene_struct, inputs, side_inputs):
   # Just return all objects in the scene
   return list(range(len(scene_struct['objects'])))
@@ -41,6 +79,7 @@ def make_filter_handler(attribute):
   return filter_handler
 
 
+@execute_handlers.register('unique')
 def unique_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 1
   if len(inputs[0]) != 1:
@@ -48,6 +87,7 @@ def unique_handler(scene_struct, inputs, side_inputs):
   return inputs[0][0]
 
 
+@execute_handlers.register('vg_relate')
 def vg_relate_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 1
   assert len(side_inputs) == 1
@@ -59,6 +99,7 @@ def vg_relate_handler(scene_struct, inputs, side_inputs):
 
 
 
+@execute_handlers.register('relate')
 def relate_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 1
   assert len(side_inputs) == 1
@@ -66,18 +107,21 @@ def relate_handler(scene_struct, inputs, side_inputs):
   return scene_struct['relationships'][relation][inputs[0]]
     
 
+@execute_handlers.register('union')
 def union_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 2
   assert len(side_inputs) == 0
   return sorted(list(set(inputs[0]) | set(inputs[1])))
 
 
+@execute_handlers.register('intersect')
 def intersect_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 2
   assert len(side_inputs) == 0
   return sorted(list(set(inputs[0]) & set(inputs[1])))
 
 
+@execute_handlers.register('count')
 def count_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 1
   return len(inputs[0])
@@ -120,64 +164,48 @@ def make_query_handler(attribute):
   return query_handler
 
 
+@execute_handlers.register('exist')
 def exist_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 1
   assert len(side_inputs) == 0
   return len(inputs[0]) > 0
 
 
+@execute_handlers.register('equal_color')
+@execute_handlers.register('equal_shape')
+@execute_handlers.register('equal_integer')
+@execute_handlers.register('equal_material')
+@execute_handlers.register('equal_size')
+@execute_handlers.register('equal_object')
 def equal_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 2
   assert len(side_inputs) == 0
   return inputs[0] == inputs[1]
 
 
+@execute_handlers.register('less_than')
 def less_than_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 2
   assert len(side_inputs) == 0
   return inputs[0] < inputs[1]
 
 
+@execute_handlers.register('greater_than')
 def greater_than_handler(scene_struct, inputs, side_inputs):
   assert len(inputs) == 2
   assert len(side_inputs) == 0
   return inputs[0] > inputs[1]
 
 
-# Register all of the answering handlers here.
-# TODO maybe this would be cleaner with a function decorator that takes
-# care of registration? Not sure. Also what if we want to reuse the same engine
-# for different sets of node types?
-execute_handlers = {
-  'scene': scene_handler,
-  'filter_color': make_filter_handler('color'),
-  'filter_shape': make_filter_handler('shape'),
-  'filter_material': make_filter_handler('material'),
-  'filter_size': make_filter_handler('size'),
-  'filter_objectcategory': make_filter_handler('objectcategory'),
-  'unique': unique_handler,
-  'relate': relate_handler,
-  'union': union_handler,
-  'intersect': intersect_handler,
-  'count': count_handler,
-  'query_color': make_query_handler('color'),
-  'query_shape': make_query_handler('shape'),
-  'query_material': make_query_handler('material'),
-  'query_size': make_query_handler('size'),
-  'exist': exist_handler,
-  'equal_color': equal_handler,
-  'equal_shape': equal_handler,
-  'equal_integer': equal_handler,
-  'equal_material': equal_handler,
-  'equal_size': equal_handler,
-  'equal_object': equal_handler,
-  'less_than': less_than_handler,
-  'greater_than': greater_than_handler,
-  'same_color': make_same_attr_handler('color'),
-  'same_shape': make_same_attr_handler('shape'),
-  'same_size': make_same_attr_handler('size'),
-  'same_material': make_same_attr_handler('material'),
-}
+# Register factory-generated handlers.
+# Simple handlers are registered via @execute_handlers.register() decorator above.
+# To reuse the engine with different node types, create a new HandlerRegistry instance.
+for attr in ['color', 'shape', 'material', 'size']:
+  execute_handlers.register_handler('filter_' + attr, make_filter_handler(attr))
+  execute_handlers.register_handler('query_' + attr, make_query_handler(attr))
+  execute_handlers.register_handler('same_' + attr, make_same_attr_handler(attr))
+execute_handlers.register_handler('filter_objectcategory',
+                                  make_filter_handler('objectcategory'))
 
 
 def answer_question(question, metadata, scene_struct, all_outputs=False,
