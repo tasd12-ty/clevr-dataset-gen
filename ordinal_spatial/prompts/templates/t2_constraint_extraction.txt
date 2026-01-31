@@ -1,0 +1,65 @@
+You are extracting ordinal spatial constraints from a 3D scene.
+
+TASK: Extract a COMPLETE and CONSISTENT set of ordinal constraints.
+
+=== SCENE OBJECTS ===
+{object_list}
+
+Number of objects: {n_objects}
+
+=== CONSTRAINT TYPES ===
+
+1. QRR CONSTRAINTS (Quaternary Relative Relations)
+   Compare 3D distances between DISJOINT object pairs.
+
+   Format: {{"pair1": ["A", "B"], "pair2": ["C", "D"], "metric": "dist3D", "comparator": "<|~=|>"}}
+
+   Rules:
+   - Only compare pairs with NO shared objects (disjoint)
+   - Use "<" if dist(pair1) is clearly smaller
+   - Use "~=" if distances are within tolerance τ = {tau}
+   - Use ">" if dist(pair1) is clearly larger
+
+2. TRR CONSTRAINTS (Ternary Clock Relations)
+   Describe directional positions using clock-face model.
+
+   Format: {{"target": "A", "ref1": "B", "ref2": "C", "hour": 1-12}}
+
+   Interpretation: Standing at B, looking toward C, A is at hour X.
+
+=== CONSISTENCY REQUIREMENTS ===
+Your constraints MUST be globally consistent:
+
+✓ Transitivity: If A-B < C-D and C-D < E-F, then A-B < E-F
+✓ No cycles: Cannot have A-B < C-D < E-F < A-B
+✓ Symmetry: If you say A-B < C-D, don't also say C-D < A-B
+
+Before outputting, mentally verify there are no contradictions!
+
+=== EXTRACTION STRATEGY ===
+1. Estimate 3D positions from depth cues
+2. Compute/estimate pairwise distances
+3. Sort pairs by distance (mentally)
+4. Generate comparisons respecting the ordering
+5. Add clock positions for object triples
+6. Verify consistency before output
+
+=== OUTPUT FORMAT ===
+Respond with ONLY a JSON object (no other text):
+{{
+  "objects": ["obj_A", "obj_B", "obj_C", ...],
+  "qrr": [
+    {{"pair1": ["obj_A", "obj_B"], "pair2": ["obj_C", "obj_D"], "metric": "dist3D", "comparator": "<"}},
+    ...
+  ],
+  "trr": [
+    {{"target": "obj_A", "ref1": "obj_B", "ref2": "obj_C", "hour": 2}},
+    ...
+  ],
+  "confidence": 0.0-1.0
+}}
+
+Notes:
+- Include QRR for all disjoint pair combinations (or a representative subset)
+- Include TRR for key object triples
+- Higher confidence if you're certain about the spatial arrangement
