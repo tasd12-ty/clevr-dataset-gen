@@ -192,6 +192,8 @@ def main(args):
     os.makedirs(args.output_blend_dir)
   
   all_scene_paths = []
+  successful_scenes = 0
+  failed_scenes = 0
   for i in range(args.num_images):
     img_path = img_template % (i + args.start_idx)
     scene_path = scene_template % (i + args.start_idx)
@@ -200,14 +202,23 @@ def main(args):
     if args.save_blendfiles == 1:
       blend_path = blend_template % (i + args.start_idx)
     num_objects = random.randint(args.min_objects, args.max_objects)
-    render_scene(args,
-      num_objects=num_objects,
-      output_index=(i + args.start_idx),
-      output_split=args.split,
-      output_image=img_path,
-      output_scene=scene_path,
-      output_blendfile=blend_path,
-    )
+    try:
+      render_scene(args,
+        num_objects=num_objects,
+        output_index=(i + args.start_idx),
+        output_split=args.split,
+        output_image=img_path,
+        output_scene=scene_path,
+        output_blendfile=blend_path,
+      )
+      successful_scenes += 1
+    except RuntimeError as e:
+      print(f"Warning: Failed to render scene {i}: {e}")
+      print("Skipping this scene and continuing...")
+      failed_scenes += 1
+      continue
+
+  print(f"\nRendering complete: {successful_scenes} successful, {failed_scenes} failed")
 
   # After rendering all images, combine the JSON files for each scene into a
   # single JSON file.
@@ -396,10 +407,15 @@ def render_scene(args,
     bpy.ops.wm.save_as_mainfile(filepath=output_blendfile)
 
 
-def add_random_objects(scene_struct, num_objects, args, camera):
+def add_random_objects(scene_struct, num_objects, args, camera, _retry_count=0):
   """
   Add random objects to the current blender scene
   """
+  # Prevent infinite recursion - max 50 retries for occlusion
+  MAX_OCCLUSION_RETRIES = 50
+  if _retry_count >= MAX_OCCLUSION_RETRIES:
+    raise RuntimeError(f"Failed to place objects after {MAX_OCCLUSION_RETRIES} "
+                       "attempts due to occlusion. Try fewer objects or smaller sizes.")
 
   # Load the property file
   with open(args.properties_json, 'r') as f:
@@ -510,7 +526,8 @@ def add_random_objects(scene_struct, num_objects, args, camera):
     print('Some objects are occluded; replacing objects')
     for obj in blender_objects:
       utils.delete_object(obj)
-    return add_random_objects(scene_struct, num_objects, args, camera)
+    return add_random_objects(scene_struct, num_objects, args, camera,
+                              _retry_count=_retry_count + 1)
 
   return objects, blender_objects
 
@@ -553,6 +570,10 @@ def check_visibility(blender_objects, min_pixels_per_object):
 
   Returns True if all objects are visible and False otherwise.
   """
+  # Skip visibility check if min_pixels is 0 or negative
+  if min_pixels_per_object <= 0:
+    return True
+
   f, path = tempfile.mkstemp(suffix='.png')
   os.close(f)  # Close file descriptor to avoid Windows lock issues
   object_colors = render_shadeless(blender_objects, path=path)
