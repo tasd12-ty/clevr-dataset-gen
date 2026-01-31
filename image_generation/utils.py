@@ -151,9 +151,8 @@ def add_object(object_dir, name, scale, loc, theta=0):
 
   bpy.context.object.rotation_euler[2] = theta
   bpy.ops.transform.resize(value=(scale, scale, scale))
-  # For objects centered at origin, translate z by scale/2 to place bottom at ground
-  # Original CLEVR used z=scale assuming origin at bottom; v5 shapes have origin at center
-  bpy.ops.transform.translate(value=(x, y, scale / 2))
+  # v5 shapes have origin at bottom, so z=0 places them on ground
+  bpy.ops.transform.translate(value=(x, y, 0))
 
 
 def load_materials(material_dir):
