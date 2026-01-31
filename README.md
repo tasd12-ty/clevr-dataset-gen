@@ -181,26 +181,76 @@ python -m ordinal_spatial.scripts.generate_dataset --small --output-dir ./data
 
 ```
 clevr-dataset-gen/
-├── image_generation/           # Blender-based image rendering
-│   ├── render_images.py        # Main rendering script
-│   ├── utils.py                # Blender utilities
-│   ├── create_*_blender5.py    # Blender 5.0 setup scripts
-│   ├── setup_blender5.sh       # One-click setup
+├── image_generation/              # Blender-based image rendering
+│   ├── render_images.py           # Main rendering script (version-aware)
+│   ├── utils.py                   # Blender utilities (version-aware)
+│   ├── collect_scenes.py          # Scene collection utility
+│   ├── create_base_scene_blender5.py   # Generate v5 base scene
+│   ├── create_materials_blender5.py    # Generate v5 materials
+│   ├── create_shapes_blender5.py       # Generate v5 shapes
+│   ├── setup_blender5.sh          # One-click Blender 5.0 setup
+│   ├── README.md                  # Image generation guide
+│   ├── README_BLENDER5.md         # Blender 5.0 compatibility guide
 │   └── data/
-│       ├── base_scene.blend    # Scene for Blender 2.78
-│       ├── base_scene_v5.blend # Scene for Blender 5.0+
-│       ├── materials/          # Materials for Blender 2.78
-│       ├── materials_v5/       # Materials for Blender 5.0+
-│       ├── shapes/             # Shapes for Blender 2.78
-│       └── shapes_v5/          # Shapes for Blender 5.0+
+│       ├── base_scene.blend       # Scene for Blender 2.78
+│       ├── base_scene_v5.blend    # Scene for Blender 5.0+
+│       ├── properties.json        # Object property definitions
+│       ├── CoGenT_A.json          # CoGenT condition A
+│       ├── CoGenT_B.json          # CoGenT condition B
+│       ├── materials/             # Materials for Blender 2.78
+│       ├── materials_v5/          # Materials for Blender 5.0+
+│       ├── shapes/                # Shapes for Blender 2.78
+│       └── shapes_v5/             # Shapes for Blender 5.0+
 │
-├── question_generation/        # Question synthesis
-│   ├── generate_questions.py   # Main script
-│   └── CLEVR_1.0_templates/    # Question templates
+├── question_generation/           # Question synthesis
+│   ├── generate_questions.py      # Main question generation script
+│   ├── question_engine.py         # Template processing engine
+│   ├── metadata.json              # Functional programming language specs
+│   ├── synonyms.json              # Natural language synonyms
+│   ├── README.md                  # Question generation guide
+│   └── CLEVR_1.0_templates/       # Question templates (~9 files)
+│       ├── zero_hop.json          # Direct attribute queries
+│       ├── one_hop.json           # Single relation queries
+│       ├── two_hop.json           # Two relation queries
+│       ├── three_hop.json         # Three relation queries
+│       ├── comparison.json        # Attribute comparison
+│       ├── compare_integer.json   # Count comparison
+│       ├── same_relate.json       # Same-attribute queries
+│       ├── single_and.json        # AND logic queries
+│       └── single_or.json         # OR logic queries
 │
-├── ordinal_spatial/            # Spatial reasoning benchmark
+├── ordinal_spatial/               # Spatial reasoning benchmark module
+│   ├── dsl/                       # Domain-Specific Language
+│   │   ├── schema.py              # Core data models
+│   │   ├── predicates.py          # Spatial predicates
+│   │   └── comparators.py         # Comparison functions
+│   ├── evaluation/                # Metrics and consistency checking
+│   │   ├── metrics.py             # Evaluation metrics
+│   │   └── consistency.py         # Consistency checker
+│   ├── generation/                # Constraint and dataset generation
+│   │   ├── constraint_extractor.py
+│   │   ├── degeneracy_checker.py
+│   │   └── difficulty_control.py
+│   ├── baselines/                 # Baseline implementations
+│   │   ├── oracle.py              # Oracle baseline
+│   │   ├── vlm_direct.py          # Direct VLM baseline
+│   │   ├── embedding.py           # Embedding baseline
+│   │   └── hybrid.py              # Hybrid baseline
+│   ├── prompts/                   # VLM prompt templates
+│   ├── tasks/                     # Evaluation task runners (T1/T2/T3)
+│   ├── scripts/                   # CLI tools
+│   │   ├── generate_dataset.py    # Dataset generation
+│   │   ├── run_baseline.py        # Run baselines
+│   │   ├── evaluate.py            # Evaluation script
+│   │   └── visualize.py           # Visualization
+│   ├── tests/                     # Unit tests
+│   └── README.md                  # Module documentation
 │
-└── images/                     # Example images
+├── images/                        # Example rendered images
+├── CLAUDE.md                      # AI assistant guide
+├── CLEVR数据集生成工具完整报告.md   # Complete Chinese documentation
+├── LICENSE                        # BSD License
+└── README.md                      # This file
 ```
 
 ## Documentation
