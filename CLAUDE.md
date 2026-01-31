@@ -43,6 +43,10 @@ clevr-dataset-gen/
 │   ├── baselines/             # Baseline implementations
 │   ├── prompts/               # VLM prompt templates
 │   ├── tasks/                 # Evaluation task runners
+│   ├── agents/                # VLM constraint extraction agents
+│   │   ├── vlm_constraint_agent.py  # Main VLM agent
+│   │   ├── cli.py             # Command-line interface
+│   │   └── prompts/           # Agent-specific prompts
 │   ├── scripts/               # CLI tools
 │   └── tests/                 # Unit tests
 │
@@ -131,6 +135,27 @@ python -m ordinal_spatial.scripts.run_baseline \
     --task t1-q \
     --data ./data \
     --split test_iid
+```
+
+### VLM Constraint Agent (Task-2/Task-3)
+
+```bash
+# Single-view constraint extraction (Task-3)
+python -m ordinal_spatial.agents.cli extract \
+    --image scene.png \
+    --output constraints.json \
+    --tau 0.10
+
+# Multi-view constraint extraction (Task-2)
+python -m ordinal_spatial.agents.cli extract \
+    --images view1.png view2.png view3.png \
+    --output constraints.json
+
+# With custom model
+python -m ordinal_spatial.agents.cli extract \
+    --image scene.png \
+    --model openai/gpt-4o \
+    --output constraints.json
 ```
 
 ## Key API Changes for Blender 5.0
