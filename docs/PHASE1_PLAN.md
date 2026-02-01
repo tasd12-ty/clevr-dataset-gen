@@ -539,3 +539,119 @@ def set_camera_position(position, look_at=(0, 0, 0)):
 |------|----------|
 | `image_generation/render_images.py` | 添加多视角支持（如采用方案 A） |
 | `ordinal_spatial/scripts/generate_dataset.py` | 可能需要与渲染流程集成 |
+
+---
+
+## 九、测试验证指南
+
+### 9.1 单元测试（无需 Blender）
+
+以下测试可以在任何 Python 环境中运行：
+
+```bash
+# 运行所有单元测试
+python -m pytest ordinal_spatial/tests/ image_generation/tests/ -v
+
+# 仅运行 constraint_diff 测试
+python -m pytest ordinal_spatial/tests/test_constraint_diff.py -v
+
+# 仅运行相机配置测试
+python -m pytest image_generation/tests/test_multiview_config.py -v
+```
+
+### 9.2 集成测试（需要 Blender）
+
+#### 安装 Blender
+
+```bash
+# Ubuntu/Debian
+sudo apt install blender
+
+# 或下载最新版本
+wget https://download.blender.org/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz
+tar xf blender-4.2.0-linux-x64.tar.xz
+export PATH=$PATH:$PWD/blender-4.2.0-linux-x64
+```
+
+#### 生成测试数据集
+
+```bash
+# 最小测试（5 场景）
+python -m ordinal_spatial.scripts.build_benchmark \
+    --output-dir ./data/benchmark_tiny \
+    --blender-path /path/to/blender \
+    --tiny
+
+# 小规模测试（100 场景）
+python -m ordinal_spatial.scripts.build_benchmark \
+    --output-dir ./data/benchmark_small \
+    --blender-path /path/to/blender \
+    --small
+```
+
+#### 验证数据集
+
+```bash
+# 验证生成的数据集
+python -m ordinal_spatial.scripts.validate_benchmark \
+    --dataset-dir ./data/benchmark_tiny \
+    --output validation_report.json
+```
+
+### 9.3 验收标准
+
+| 检查项 | 标准 | 验证方法 |
+|--------|------|----------|
+| 单元测试 | 104 个测试全部通过 | `pytest ordinal_spatial/tests/ image_generation/tests/` |
+| 场景渲染 | 生成 N 个场景 × 4 视角图像 | 检查 `images/multi_view/` 目录 |
+| 相机参数 | 每视角正确的方位角（90° 间隔） | 检查 `camera_params` JSON |
+| 约束提取 | 每场景包含 QRR/TRR 约束 | 检查 `metadata/` JSON |
+| 数据集结构 | splits, images, metadata 目录完整 | 运行 validate_benchmark.py |
+
+### 9.4 测试 Constraint-Diff 指标
+
+```python
+from ordinal_spatial.evaluation import compute_constraint_diff
+
+# 示例：计算预测与 GT 的差异
+predicted = {
+    "qrr": [
+        {"pair1": ["a", "b"], "pair2": ["c", "d"], "comparator": "<", "metric": "dist3D"}
+    ]
+}
+ground_truth = {
+    "qrr": [
+        {"pair1": ["a", "b"], "pair2": ["c", "d"], "comparator": "<", "metric": "dist3D"},
+        {"pair1": ["e", "f"], "pair2": ["g", "h"], "comparator": ">", "metric": "dist3D"},
+    ]
+}
+
+metrics = compute_constraint_diff(predicted, ground_truth)
+print(metrics.summary())
+# Output:
+# Constraint-Diff Metrics:
+#   GT: 2, Pred: 1
+#   Correct: 1, Missing: 1, Spurious: 0, Violated: 0
+#   Missing Rate: 0.500
+#   ...
+```
+
+---
+
+## 十、实施进度
+
+### 已完成 ✅
+
+- [x] `render_multiview.py` - 多视角渲染脚本
+- [x] `build_benchmark.py` - 数据集构建脚本
+- [x] `validate_benchmark.py` - 数据集验证脚本
+- [x] `constraint_diff.py` - Constraint-Diff 评估指标
+- [x] 单元测试 - 104 个测试全部通过
+- [x] 相机轨道计算 - 球面坐标系正确实现
+
+### 待完成 ⏳
+
+- [ ] 在 Blender 环境中验证渲染流程
+- [ ] 生成小规模测试数据集
+- [ ] 生成完整 Benchmark 数据集
+- [ ] 与 VLM Agent 端到端集成测试
