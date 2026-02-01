@@ -123,6 +123,51 @@ def preprocess_for_t1_qrr(
     return processed
 
 
+def preprocess_for_t2(
+    dataset: List[Dict],
+    data_path: str,
+) -> List[Dict]:
+    """
+    Preprocess benchmark dataset for T2 evaluation.
+
+    Loads metadata and formats for constraint extraction evaluation.
+    """
+    processed = []
+    data_dir = Path(data_path)
+
+    for item in dataset:
+        meta_path = data_dir / item.get("metadata_path", "")
+        if not meta_path.exists():
+            continue
+
+        with open(meta_path) as f:
+            meta = json.load(f)
+
+        # Get objects
+        objects = meta.get("objects", [])
+
+        # Get ground truth constraints (nested structure: constraints.constraints.qrr)
+        constraints_wrapper = meta.get("constraints", {})
+        constraints = constraints_wrapper.get("constraints", {})
+
+        # Extract image filename
+        image_path = item.get("single_view_image", "")
+        if "/" in image_path:
+            image_path = image_path.split("/")[-1]
+
+        processed.append({
+            "scene_id": item.get("scene_id", ""),
+            "image_path": image_path,
+            "scene": {"scene_id": item["scene_id"], "objects": objects},
+            "ground_truth": {
+                "qrr": constraints.get("qrr", []),
+                "trr": constraints.get("trr", []),
+            },
+        })
+
+    return processed
+
+
 def get_baseline(baseline_name: str, config: Optional[Dict] = None) -> Any:
     """
     按名称获取基线实例。
@@ -386,7 +431,11 @@ def main():
     if args.task in ["t2", "all"]:
         logger.info("Running T2 evaluation...")
         config["output_dir"] = str(output_dir / "t2")
-        results["t2"] = run_t2(baseline, dataset, config)
+        config["images_dir"] = str(Path(args.data) / "images" / "single_view")
+        # Preprocess dataset for T2
+        t2_dataset = preprocess_for_t2(dataset, args.data)
+        logger.info(f"Preprocessed {len(t2_dataset)} scenes for T2")
+        results["t2"] = run_t2(baseline, t2_dataset, config)
         logger.info(f"T2 Results: {results['t2']['metrics']}")
 
     if args.task in ["t3", "all"]:
