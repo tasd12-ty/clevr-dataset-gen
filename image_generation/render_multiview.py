@@ -436,10 +436,31 @@ def add_random_objects(directions, num_objects, args, camera, _retry_count=0):
     """
     Add random objects to the scene.
     Adapted from render_images.py with retry limit.
+
+    Placement area scales with number of objects to accommodate dense scenes.
     """
-    MAX_RETRIES = 50
+    MAX_RETRIES = 100  # Increased for dense scenes
     if _retry_count >= MAX_RETRIES:
         raise RuntimeError(f"Failed to place objects after {MAX_RETRIES} attempts")
+
+    # Scale placement area based on number of objects
+    # Base area: 3.0 for up to 6 objects
+    # For more objects, scale up to accommodate density
+    if num_objects <= 6:
+        placement_range = 3.0
+    elif num_objects <= 10:
+        placement_range = 3.5
+    else:
+        # For 11-15 objects, use larger area
+        placement_range = 4.0
+
+    # Adjust spacing for dense scenes
+    effective_min_dist = args.min_dist
+    effective_margin = args.margin
+    if num_objects > 10:
+        # Reduce spacing requirements for very dense scenes
+        effective_min_dist = max(0.15, args.min_dist * 0.7)
+        effective_margin = max(0.25, args.margin * 0.7)
 
     # Load properties
     with open(args.properties_json, 'r') as f:
@@ -471,8 +492,8 @@ def add_random_objects(directions, num_objects, args, camera, _retry_count=0):
                     _retry_count=_retry_count + 1
                 )
 
-            x = random.uniform(-3, 3)
-            y = random.uniform(-3, 3)
+            x = random.uniform(-placement_range, placement_range)
+            y = random.uniform(-placement_range, placement_range)
 
             # Check distances
             dists_good = True
@@ -480,13 +501,13 @@ def add_random_objects(directions, num_objects, args, camera, _retry_count=0):
             for (xx, yy, rr) in positions:
                 dx, dy = x - xx, y - yy
                 dist = math.sqrt(dx * dx + dy * dy)
-                if dist - r - rr < args.min_dist:
+                if dist - r - rr < effective_min_dist:
                     dists_good = False
                     break
                 for direction_name in ['left', 'right', 'front', 'behind']:
                     direction_vec = directions[direction_name]
-                    margin = dx * direction_vec[0] + dy * direction_vec[1]
-                    if 0 < margin < args.margin:
+                    margin_val = dx * direction_vec[0] + dy * direction_vec[1]
+                    if 0 < margin_val < effective_margin:
                         margins_good = False
                         break
                 if not margins_good:
