@@ -34,6 +34,12 @@ from ordinal_spatial.evaluation.metrics import (
     procrustes_align,
 )
 
+from ordinal_spatial.evaluation.constraint_diff import (
+    ConstraintDiffMetrics,
+    compute_constraint_diff,
+    compute_constraint_diff_batch,
+)
+
 __all__ = [
     # Consistency
     "ConsistencyStatus",
@@ -56,4 +62,8 @@ __all__ = [
     "compute_t2_metrics_batch",
     "compute_t3_metrics",
     "procrustes_align",
+    # Constraint-Diff
+    "ConstraintDiffMetrics",
+    "compute_constraint_diff",
+    "compute_constraint_diff_batch",
 ]

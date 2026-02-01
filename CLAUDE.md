@@ -213,10 +213,36 @@ def get_object_by_name(name, alternative_names=None):
 lamp_key = get_object_by_name('Lamp_Key', ['Light_Key', 'Key'])
 ```
 
+## Environment Configuration
+
+### Blender Path (WSL)
+
+在当前 WSL 环境中，Blender 可执行文件位于：
+
+```
+/mnt/d/tools/blender/blender.exe
+```
+
+使用示例：
+
+```bash
+# 检查 Blender 版本
+/mnt/d/tools/blender/blender.exe --version
+
+# 渲染图像
+/mnt/d/tools/blender/blender.exe --background --python render_images.py -- --num_images 10
+
+# 生成 Benchmark 数据集
+python -m ordinal_spatial.scripts.build_benchmark \
+    --output-dir ./data/benchmark_test \
+    --blender-path /mnt/d/tools/blender/blender.exe \
+    --tiny
+```
+
 ## Dependencies
 
 ### External Tools
-- **Blender 2.78-5.0+**: Required for image rendering
+- **Blender 2.78-5.0+**: Required for image rendering (WSL: `/mnt/d/tools/blender/blender.exe`)
 - **Python 3.5+**: For original CLEVR code
 - **Python 3.7+**: For ordinal_spatial module
 
@@ -271,12 +297,87 @@ print('Success!')
 | File | Purpose |
 |------|---------|
 | `image_generation/render_images.py` | Main rendering script (version-aware) |
+| `image_generation/render_multiview.py` | Multi-view rendering with spherical cameras |
 | `image_generation/utils.py` | Blender utilities (version-aware) |
 | `image_generation/create_base_scene_blender5.py` | Generate Blender 5.0 base scene |
 | `image_generation/create_materials_blender5.py` | Generate Blender 5.0 materials |
 | `image_generation/create_shapes_blender5.py` | Generate Blender 5.0 shapes |
 | `question_generation/generate_questions.py` | Question synthesis engine |
 | `ordinal_spatial/dsl/schema.py` | Core data models |
+| `ordinal_spatial/scripts/build_benchmark.py` | Benchmark dataset builder |
+| `ordinal_spatial/scripts/validate_benchmark.py` | Benchmark validation tool |
+
+## ORDINAL-SPATIAL Benchmark Generation
+
+### Quick Start
+
+```bash
+# Generate tiny dataset for testing
+python -m ordinal_spatial.scripts.build_benchmark \
+    --output-dir ./data/benchmark_tiny \
+    --blender-path /mnt/d/tools/blender/blender.exe \
+    --tiny
+
+# Generate small dataset
+python -m ordinal_spatial.scripts.build_benchmark \
+    --output-dir ./data/benchmark_small \
+    --blender-path /mnt/d/tools/blender/blender.exe \
+    --small
+
+# Generate full benchmark
+python -m ordinal_spatial.scripts.build_benchmark \
+    --output-dir ./data/benchmark_full \
+    --blender-path /mnt/d/tools/blender/blender.exe \
+    --n-train 1000 --n-val 200 --n-test 500 \
+    --n-test-comp 200 --n-test-hard 200
+
+# Validate generated dataset
+python -m ordinal_spatial.scripts.validate_benchmark \
+    --dataset-dir ./data/benchmark_tiny
+```
+
+### Dataset Splits
+
+| Split | Objects | Tau | Description |
+|-------|---------|-----|-------------|
+| train | 4-10 | 0.10 | Training set |
+| val | 4-10 | 0.10 | Validation set |
+| test_iid | 4-10 | 0.10 | IID test set |
+| test_comp | 10-15 | 0.10 | Compositional (more objects) |
+| test_hard | 4-10 | 0.05 | Stricter tau threshold |
+
+### Multi-View Rendering
+
+Each scene generates:
+- 1 single-view image (view_0)
+- 4 multi-view images (view_0, view_1, view_2, view_3) at 90° azimuth intervals
+
+Camera configuration:
+- Distance: 12.0 units
+- Elevation: 30°
+- Azimuths: 45°, 135°, 225°, 315°
+
+### Constraint Types Extracted
+
+| Type | Description |
+|------|-------------|
+| QRR | Quantitative Ratio Relations (distance comparisons) |
+| TRR | Ternary Reference Relations (clock-face directions) |
+| Topology | Disjoint/touching relationships |
+| Occlusion | Which objects occlude others |
+| Axial | Left/right/front/behind relations |
+| Size | Bigger/smaller comparisons |
+| Closer | Distance ordering from anchor objects |
+
+### Dense Scene Placement (10-15 objects)
+
+For scenes with many objects, placement parameters scale automatically:
+
+| Objects | Placement Area | min_dist | margin |
+|---------|----------------|----------|--------|
+| 1-6 | 6×6 | 0.25 | 0.40 |
+| 7-10 | 7×7 | 0.25 | 0.40 |
+| 11-15 | 8×8 | 0.175 | 0.28 |
 
 ## Blender 5.0 Key Fixes (vs Original CLEVR)
 
