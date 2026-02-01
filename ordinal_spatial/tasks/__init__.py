@@ -8,6 +8,8 @@ Available tasks:
 """
 
 from ordinal_spatial.tasks.t1_classification import (
+    T1Config,
+    T1Result,
     T1QRRRunner,
     T1TRRRunner,
     run_t1_qrr_evaluation,
@@ -26,6 +28,8 @@ from ordinal_spatial.tasks.t3_reconstruction import (
 
 __all__ = [
     # T1
+    "T1Config",
+    "T1Result",
     "T1QRRRunner",
     "T1TRRRunner",
     "run_t1_qrr_evaluation",

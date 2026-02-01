@@ -157,9 +157,12 @@ class T1QRRRunner:
                         "confidence": pred.get("confidence", 0.5),
                     })
 
+                    # Handle ground_truth as string or dict
+                    gt = query.get("ground_truth", "~=")
+                    gt_comparator = gt.get("comparator", "~=") if isinstance(gt, dict) else gt
                     ground_truth.append({
                         "query_id": query_id,
-                        "comparator": query.get("ground_truth", {}).get("comparator", "~="),
+                        "comparator": gt_comparator,
                     })
 
                 except Exception as e:
@@ -171,9 +174,12 @@ class T1QRRRunner:
                         "confidence": 0.0,
                         "error": str(e),
                     })
+                    # Handle ground_truth as string or dict
+                    gt = query.get("ground_truth", "~=")
+                    gt_comparator = gt.get("comparator", "~=") if isinstance(gt, dict) else gt
                     ground_truth.append({
                         "query_id": query_id,
-                        "comparator": query.get("ground_truth", {}).get("comparator", "~="),
+                        "comparator": gt_comparator,
                     })
 
         # Compute metrics

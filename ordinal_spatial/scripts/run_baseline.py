@@ -60,6 +60,69 @@ def load_dataset(data_path: str, split: str = "test_iid") -> List[Dict]:
     raise FileNotFoundError(f"Dataset not found: {data_path}/{split}")
 
 
+def preprocess_for_t1_qrr(
+    dataset: List[Dict],
+    data_path: str,
+    max_queries_per_scene: int = 10,
+) -> List[Dict]:
+    """
+    Preprocess benchmark dataset for T1-Q evaluation.
+
+    Loads metadata and converts QRR constraints to query format.
+    """
+    processed = []
+    data_dir = Path(data_path)
+
+    for item in dataset:
+        meta_path = data_dir / item.get("metadata_path", "")
+        if not meta_path.exists():
+            continue
+
+        with open(meta_path) as f:
+            meta = json.load(f)
+
+        # Get objects
+        objects = meta.get("objects", [])
+
+        # Get QRR constraints from metadata
+        constraints = meta.get("constraints", {})
+        if isinstance(constraints, dict):
+            constraint_data = constraints.get("constraints", {})
+            qrr_list = constraint_data.get("qrr", [])
+        else:
+            qrr_list = []
+
+        # Convert to queries
+        queries = []
+        for i, qrr in enumerate(qrr_list[:max_queries_per_scene]):
+            pair1 = qrr.get("pair1", [])
+            pair2 = qrr.get("pair2", [])
+            if len(pair1) == 2 and len(pair2) == 2:
+                queries.append({
+                    "query_id": f"{item['scene_id']}_qrr_{i}",
+                    "A": pair1[0],
+                    "B": pair1[1],
+                    "C": pair2[0],
+                    "D": pair2[1],
+                    "metric": qrr.get("metric", "dist3D"),
+                    "ground_truth": qrr.get("comparator", ""),
+                })
+
+        if queries:
+            # Extract just the filename from the image path
+            image_path = item.get("single_view_image", "")
+            if "/" in image_path:
+                image_path = image_path.split("/")[-1]
+            processed.append({
+                "scene_id": item.get("scene_id", ""),
+                "image_path": image_path,
+                "scene": {"scene_id": item["scene_id"], "objects": objects},
+                "qrr_queries": queries,
+            })
+
+    return processed
+
+
 def get_baseline(baseline_name: str, config: Optional[Dict] = None) -> Any:
     """
     按名称获取基线实例。
@@ -307,7 +370,11 @@ def main():
     if args.task in ["t1-q", "all"]:
         logger.info("Running T1-Q evaluation...")
         config["output_dir"] = str(output_dir / "t1_qrr")
-        results["t1_qrr"] = run_t1_qrr(baseline, dataset, config)
+        config["images_dir"] = str(Path(args.data) / "images" / "single_view")
+        # Preprocess dataset for T1-Q
+        t1q_dataset = preprocess_for_t1_qrr(dataset, args.data)
+        logger.info(f"Preprocessed {len(t1q_dataset)} scenes with QRR queries")
+        results["t1_qrr"] = run_t1_qrr(baseline, t1q_dataset, config)
         logger.info(f"T1-Q Results: {results['t1_qrr']['metrics']}")
 
     if args.task in ["t1-c", "all"]:
