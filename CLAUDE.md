@@ -213,10 +213,36 @@ def get_object_by_name(name, alternative_names=None):
 lamp_key = get_object_by_name('Lamp_Key', ['Light_Key', 'Key'])
 ```
 
+## Environment Configuration
+
+### Blender Path (WSL)
+
+在当前 WSL 环境中，Blender 可执行文件位于：
+
+```
+/mnt/d/tools/blender/blender.exe
+```
+
+使用示例：
+
+```bash
+# 检查 Blender 版本
+/mnt/d/tools/blender/blender.exe --version
+
+# 渲染图像
+/mnt/d/tools/blender/blender.exe --background --python render_images.py -- --num_images 10
+
+# 生成 Benchmark 数据集
+python -m ordinal_spatial.scripts.build_benchmark \
+    --output-dir ./data/benchmark_test \
+    --blender-path /mnt/d/tools/blender/blender.exe \
+    --tiny
+```
+
 ## Dependencies
 
 ### External Tools
-- **Blender 2.78-5.0+**: Required for image rendering
+- **Blender 2.78-5.0+**: Required for image rendering (WSL: `/mnt/d/tools/blender/blender.exe`)
 - **Python 3.5+**: For original CLEVR code
 - **Python 3.7+**: For ordinal_spatial module
 

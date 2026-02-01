@@ -31,7 +31,7 @@ import sys
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 logging.basicConfig(
     level=logging.INFO,
@@ -190,28 +190,38 @@ class BenchmarkBuilder:
         """
         Render images for a split using Blender.
 
+        For Windows Blender: output to D:/benchmark_render, read from /mnt/d/benchmark_render
+
         Args:
             split_config: Split configuration
 
         Returns:
-            Path to render output directory
+            Path to render output directory (WSL path)
         """
-        render_output = self.output_dir / "render_temp" / split_config.name
+        is_windows_blender = self.config.blender_path.endswith('.exe')
+
+        if is_windows_blender:
+            # Windows Blender: single-level dir on D:/
+            blender_output = f"D:/render_{split_config.name}"
+            render_output = Path(f"/mnt/d/render_{split_config.name}")
+        else:
+            # Native Blender: use local path
+            render_output = self.output_dir / "render_temp" / split_config.name
+            blender_output = str(render_output)
+
         render_output.mkdir(parents=True, exist_ok=True)
 
-        # Build Blender command
-        render_script = self.image_gen_dir / "render_multiview.py"
-
+        # Use relative paths for Windows Blender compatibility
         cmd = [
             self.config.blender_path,
             "--background",
-            "--python", str(render_script),
+            "--python", "image_generation/render_multiview.py",
             "--",
-            "--base_scene_blendfile", str(self.image_gen_dir / "data" / "base_scene_v5.blend"),
-            "--properties_json", str(self.image_gen_dir / "data" / "properties.json"),
-            "--shape_dir", str(self.image_gen_dir / "data" / "shapes_v5"),
-            "--material_dir", str(self.image_gen_dir / "data" / "materials_v5"),
-            "--output_dir", str(render_output),
+            "--base_scene_blendfile", "image_generation/data/base_scene_v5.blend",
+            "--properties_json", "image_generation/data/properties.json",
+            "--shape_dir", "image_generation/data/shapes_v5",
+            "--material_dir", "image_generation/data/materials_v5",
+            "--output_dir", blender_output,
             "--split", split_config.name,
             "--num_images", str(split_config.n_scenes),
             "--min_objects", str(split_config.min_objects),
@@ -227,15 +237,14 @@ class BenchmarkBuilder:
         if self.config.use_gpu:
             cmd.extend(["--use_gpu", "1"])
 
-        logger.info(f"Running Blender render...")
-        logger.debug(f"Command: {' '.join(cmd)}")
+        logger.info(f"Running Blender render to {blender_output}...")
 
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=3600 * 4  # 4 hour timeout
+                timeout=3600 * 4
             )
 
             if result.returncode != 0:
