@@ -106,6 +106,10 @@ def preprocess_for_t1_qrr(
                     "D": pair2[1],
                     "metric": qrr.get("metric", "dist3D"),
                     "ground_truth": qrr.get("comparator", ""),
+                    # Enhanced: include difficulty metadata for detailed analysis
+                    "difficulty": qrr.get("difficulty"),
+                    "ratio": qrr.get("ratio"),
+                    "boundary_flag": qrr.get("boundary_flag"),
                 })
 
         if queries:
