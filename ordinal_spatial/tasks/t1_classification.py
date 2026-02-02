@@ -14,6 +14,11 @@ T1-C: TRR（三元时钟关系）分类
 - T1-Q: 准确率、宏平均F1、序距离误差
 - T1-C: 小时准确率、象限准确率、角度误差
 
+增强记录（论文级）：
+- raw_response: 原始VLM回复
+- ground_truth: 完整GT（含difficulty, ratio, boundary_flag）
+- evaluation: 每个query的正确性、ordinal_distance_error、is_flip
+
 Task T1: Ordinal Classification runners.
 
 T1-Q: QRR (Quaternary Relative Relations) classification
@@ -31,7 +36,9 @@ from ordinal_spatial.evaluation.metrics import (
     compute_t1_trr_metrics,
     T1QRRMetrics,
     T1TRRMetrics,
+    normalize_comparator,
 )
+from ordinal_spatial.dsl.comparators import Comparator, ordinal_distance, is_flip
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +50,7 @@ class T1Config:
     with_cot: bool = False
     save_predictions: bool = True
     output_dir: Optional[str] = None
+    save_detailed: bool = True  # Save enhanced predictions with raw_response, evaluation
 
 
 @dataclass
@@ -91,18 +99,20 @@ class T1QRRRunner:
         """
         predictions = []
         ground_truth = []
+        detailed = []  # 增强记录
         errors = []
 
         for item in dataset:
             scene = item.get("scene", item)
+            scene_id = scene.get("scene_id", "unknown")
             queries = item.get("qrr_queries", [])
 
             # Get image if available
             image = None
+            image_path_str = item.get("image_path", "")
             if images_dir:
-                image_path = item.get("image_path", "")
-                if image_path:
-                    full_path = Path(images_dir) / image_path
+                if image_path_str:
+                    full_path = Path(images_dir) / image_path_str
                     if full_path.exists():
                         image = str(full_path)
 
@@ -115,8 +125,26 @@ class T1QRRRunner:
             for query in queries:
                 query_id = query.get("query_id", "")
 
+                # Extract full ground truth info
+                gt_raw = query.get("ground_truth", "~=")
+                if isinstance(gt_raw, dict):
+                    gt_comparator = gt_raw.get("comparator", "~=")
+                    gt_difficulty = gt_raw.get("difficulty")
+                    gt_ratio = gt_raw.get("ratio")
+                    gt_boundary_flag = gt_raw.get("boundary_flag")
+                else:
+                    gt_comparator = gt_raw
+                    gt_difficulty = query.get("difficulty")
+                    gt_ratio = query.get("ratio")
+                    gt_boundary_flag = query.get("boundary_flag")
+
                 try:
                     # Get prediction from baseline
+                    raw_response = None
+                    parse_success = True
+                    parse_error = None
+                    reasoning = None
+
                     if hasattr(self.baseline, "predict_qrr"):
                         if image and hasattr(self.baseline, "config"):
                             # VLM baseline with image
@@ -128,6 +156,11 @@ class T1QRRRunner:
                                 metric=query.get("metric", "dist3D"),
                                 tau=self.config.tau,
                             )
+                            # Extract enhanced fields
+                            raw_response = pred.get("raw_response")
+                            reasoning = pred.get("reasoning")
+                            parse_error = pred.get("parse_error")
+                            parse_success = not bool(parse_error)
                         else:
                             # Oracle baseline without image
                             from ordinal_spatial.dsl.schema import QRRQuery
@@ -151,18 +184,57 @@ class T1QRRRunner:
                     else:
                         raise AttributeError("Baseline missing predict_qrr method")
 
+                    pred_comparator = normalize_comparator(pred.get("comparator", "~="))
+                    pred_confidence = pred.get("confidence", 0.5)
+
+                    # Compute evaluation metrics for this query
+                    gt_comp_normalized = normalize_comparator(gt_comparator)
+                    is_correct = (pred_comparator == gt_comp_normalized)
+
+                    pred_c = Comparator.from_string(pred_comparator)
+                    gt_c = Comparator.from_string(gt_comp_normalized)
+                    ord_dist_err = ordinal_distance(pred_c, gt_c)
+                    is_flip_error = is_flip(pred_c, gt_c)
+
                     predictions.append({
                         "query_id": query_id,
-                        "comparator": pred.get("comparator", "~="),
-                        "confidence": pred.get("confidence", 0.5),
+                        "comparator": pred_comparator,
+                        "confidence": pred_confidence,
                     })
 
-                    # Handle ground_truth as string or dict
-                    gt = query.get("ground_truth", "~=")
-                    gt_comparator = gt.get("comparator", "~=") if isinstance(gt, dict) else gt
                     ground_truth.append({
                         "query_id": query_id,
-                        "comparator": gt_comparator,
+                        "comparator": gt_comp_normalized,
+                    })
+
+                    # Enhanced detailed record
+                    detailed.append({
+                        "query_id": query_id,
+                        "scene_id": scene_id,
+                        "image_path": image_path_str,
+
+                        "prediction": {
+                            "comparator": pred_comparator,
+                            "confidence": pred_confidence,
+                            "reasoning": reasoning,
+                        },
+
+                        "ground_truth": {
+                            "comparator": gt_comp_normalized,
+                            "difficulty": gt_difficulty,
+                            "ratio": gt_ratio,
+                            "boundary_flag": gt_boundary_flag,
+                        },
+
+                        "evaluation": {
+                            "is_correct": is_correct,
+                            "ordinal_distance_error": ord_dist_err,
+                            "is_flip": is_flip_error,
+                        },
+
+                        "raw_response": raw_response,
+                        "parse_success": parse_success,
+                        "parse_error": str(parse_error) if parse_error else None,
                     })
 
                 except Exception as e:
@@ -174,12 +246,26 @@ class T1QRRRunner:
                         "confidence": 0.0,
                         "error": str(e),
                     })
-                    # Handle ground_truth as string or dict
-                    gt = query.get("ground_truth", "~=")
-                    gt_comparator = gt.get("comparator", "~=") if isinstance(gt, dict) else gt
                     ground_truth.append({
                         "query_id": query_id,
-                        "comparator": gt_comparator,
+                        "comparator": normalize_comparator(gt_comparator),
+                    })
+                    # Error detailed record
+                    detailed.append({
+                        "query_id": query_id,
+                        "scene_id": scene_id,
+                        "image_path": image_path_str,
+                        "prediction": {"comparator": "~=", "confidence": 0.0, "reasoning": None},
+                        "ground_truth": {
+                            "comparator": normalize_comparator(gt_comparator),
+                            "difficulty": gt_difficulty,
+                            "ratio": gt_ratio,
+                            "boundary_flag": gt_boundary_flag,
+                        },
+                        "evaluation": {"is_correct": False, "ordinal_distance_error": 0, "is_flip": False},
+                        "raw_response": None,
+                        "parse_success": False,
+                        "parse_error": str(e),
                     })
 
         # Compute metrics
@@ -187,7 +273,7 @@ class T1QRRRunner:
 
         # Save if configured
         if self.config.save_predictions and self.config.output_dir:
-            self._save_results(predictions, ground_truth, metrics)
+            self._save_results(predictions, ground_truth, metrics, detailed)
 
         return T1Result(
             metrics=metrics,
@@ -197,20 +283,77 @@ class T1QRRRunner:
             errors=errors,
         )
 
-    def _save_results(self, predictions, ground_truth, metrics):
+    def _save_results(self, predictions, ground_truth, metrics, detailed=None):
         """
         保存结果到输出目录。
 
         Save results to output directory.
+        Includes enhanced detailed predictions with raw_response, evaluation.
         """
         output_dir = Path(self.config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Basic outputs (backward compatible)
         with open(output_dir / "predictions.json", "w") as f:
             json.dump(predictions, f, indent=2)
 
         with open(output_dir / "metrics.json", "w") as f:
             json.dump(metrics.to_dict(), f, indent=2)
+
+        # Enhanced detailed predictions (论文级记录)
+        if detailed and self.config.save_detailed:
+            with open(output_dir / "predictions_detailed.json", "w") as f:
+                json.dump(detailed, f, indent=2, ensure_ascii=False)
+
+            # Compute metrics by difficulty
+            by_difficulty = {}
+            by_boundary = {"boundary": [], "non_boundary": []}
+
+            for d in detailed:
+                difficulty = d["ground_truth"].get("difficulty")
+                boundary_flag = d["ground_truth"].get("boundary_flag")
+                is_correct = d["evaluation"]["is_correct"]
+
+                if difficulty is not None:
+                    if difficulty not in by_difficulty:
+                        by_difficulty[difficulty] = {"correct": 0, "total": 0}
+                    by_difficulty[difficulty]["total"] += 1
+                    if is_correct:
+                        by_difficulty[difficulty]["correct"] += 1
+
+                if boundary_flag is not None:
+                    key = "boundary" if boundary_flag else "non_boundary"
+                    by_boundary[key].append(is_correct)
+
+            # Format difficulty metrics
+            difficulty_metrics = {}
+            for diff, counts in sorted(by_difficulty.items()):
+                acc = counts["correct"] / counts["total"] if counts["total"] > 0 else 0.0
+                difficulty_metrics[f"difficulty_{diff}"] = {
+                    "accuracy": acc,
+                    "n_samples": counts["total"],
+                }
+
+            # Format boundary metrics
+            boundary_metrics = {}
+            for key, results in by_boundary.items():
+                if results:
+                    boundary_metrics[key] = {
+                        "accuracy": sum(results) / len(results),
+                        "n_samples": len(results),
+                    }
+
+            metrics_by_difficulty = {
+                "overall": metrics.to_dict(),
+                "by_difficulty": difficulty_metrics,
+                "by_boundary": boundary_metrics,
+            }
+
+            with open(output_dir / "metrics_by_difficulty.json", "w") as f:
+                json.dump(metrics_by_difficulty, f, indent=2)
+
+            logger.info(f"Saved detailed predictions to {output_dir / 'predictions_detailed.json'}")
+            logger.info(f"Saved difficulty metrics to {output_dir / 'metrics_by_difficulty.json'}")
 
 
 class T1TRRRunner:

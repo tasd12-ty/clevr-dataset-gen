@@ -39,11 +39,11 @@ class VLMConfig:
 
     Configuration for VLM baseline.
     """
-    model: str = "google/gemma-3-27b-it"
+    model: str = "google/gemini-2.0-flash-001"
     api_base: str = "https://openrouter.ai/api/v1"
     api_key: Optional[str] = None
     temperature: float = 0.0
-    max_tokens: int = 1024
+    max_tokens: Optional[int] = None  # None = use API default (max)
     timeout: float = 60.0
     retry_count: int = 3
     retry_delay: float = 1.0
@@ -311,13 +311,22 @@ class VLMDirectBaseline:
 
         for attempt in range(self.config.retry_count):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.config.model,
-                    messages=messages,
-                    temperature=self.config.temperature,
-                    max_tokens=self.config.max_tokens,
-                )
-                return response.choices[0].message.content
+                # Build request params
+                params = {
+                    "model": self.config.model,
+                    "messages": messages,
+                    "temperature": self.config.temperature,
+                }
+                if self.config.max_tokens is not None:
+                    params["max_tokens"] = self.config.max_tokens
+
+                response = self.client.chat.completions.create(**params)
+                content = response.choices[0].message.content
+
+                # Log token usage
+                self._log_token_usage(messages, content, response)
+
+                return content
 
             except Exception as e:
                 last_error = e
@@ -326,6 +335,61 @@ class VLMDirectBaseline:
                     time.sleep(self.config.retry_delay * (attempt + 1))
 
         raise RuntimeError(f"API call failed after {self.config.retry_count} attempts: {last_error}")
+
+    def _log_token_usage(self, messages: List[Dict], response_text: str, response):
+        """
+        记录 token 使用情况。
+
+        Log token usage for debugging.
+        """
+        try:
+            # 优先使用 API 返回的 usage 信息
+            if hasattr(response, 'usage') and response.usage:
+                usage = response.usage
+                prompt_tokens = getattr(usage, 'prompt_tokens', None)
+                completion_tokens = getattr(usage, 'completion_tokens', None)
+                total_tokens = getattr(usage, 'total_tokens', None)
+
+                if prompt_tokens is not None:
+                    logger.info(
+                        f"[Token Usage] API reported: "
+                        f"prompt={prompt_tokens}, completion={completion_tokens}, "
+                        f"total={total_tokens}"
+                    )
+                    return
+
+            # API 没有返回 usage，使用 tokenizer 估算
+            from ordinal_spatial.utils.token_counter import count_tokens
+
+            # 计算输入 tokens (只计算文本部分)
+            input_text = ""
+            for msg in messages:
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    input_text += content
+                elif isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            input_text += item.get("text", "")
+
+            prompt_tokens = count_tokens(input_text, self.config.model)
+            completion_tokens = count_tokens(response_text, self.config.model)
+
+            logger.info(
+                f"[Token Usage] Estimated ({self.config.model}): "
+                f"prompt≈{prompt_tokens}, completion≈{completion_tokens}, "
+                f"total≈{prompt_tokens + completion_tokens}"
+            )
+
+            # 检查是否可能被截断
+            if completion_tokens > 3000:
+                logger.warning(
+                    f"[Token Warning] Large completion ({completion_tokens} tokens), "
+                    "response may be truncated. Consider increasing max_tokens."
+                )
+
+        except Exception as e:
+            logger.debug(f"Token counting failed: {e}")
 
     def _parse_qrr_response(self, response: str) -> Dict[str, Any]:
         """

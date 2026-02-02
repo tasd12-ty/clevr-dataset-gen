@@ -50,19 +50,94 @@ def load_template(name: str) -> str:
     return path.read_text()
 
 
-def format_object_description(obj: Dict) -> str:
+def get_position_description(obj: Dict) -> str:
     """
-    将单个物体格式化为描述字符串。
+    根据3D坐标生成位置描述。
 
-    Format a single object as a description string.
+    Generate position description from 3D coordinates.
+
+    使用坐标系：
+    - X轴：正方向为右 (right)，负方向为左 (left)
+    - Y轴：正方向为后/远 (back/far)，负方向为前/近 (front/near)
+
+    Returns:
+        位置描述字符串，如 "front-left", "back-right", "center"
+    """
+    coords = obj.get("3d_coords", obj.get("position_3d", None))
+    if coords is None:
+        return ""
+
+    x, y = coords[0], coords[1]
+
+    # X轴位置判定（阈值1.0）
+    if x < -1.0:
+        x_pos = "left"
+    elif x > 1.0:
+        x_pos = "right"
+    else:
+        x_pos = "center"
+
+    # Y轴位置判定（阈值0）
+    # Y负值 = 靠近相机 = front
+    # Y正值 = 远离相机 = back
+    if y < -1.0:
+        y_pos = "front"
+    elif y > 1.0:
+        y_pos = "back"
+    else:
+        y_pos = "middle"
+
+    # 组合位置描述
+    if x_pos == "center" and y_pos == "middle":
+        return "center"
+    elif x_pos == "center":
+        return y_pos
+    elif y_pos == "middle":
+        return x_pos
+    else:
+        return f"{y_pos}-{x_pos}"
+
+
+def format_object_description(obj: Dict, include_position: bool = True) -> str:
+    """
+    将单个物体格式化为丰富的描述字符串。
+
+    Format a single object as a rich description string.
+
+    格式：[位置] [颜色] [大小] [材质] [形状]
+    例如："front-left brown small rubber cylinder"
+
+    Args:
+        obj: 物体数据字典
+        include_position: 是否包含位置描述（默认True）
+
+    Returns:
+        描述字符串
     """
     parts = []
+
+    # 位置描述（可选）
+    if include_position:
+        pos = get_position_description(obj)
+        if pos:
+            parts.append(pos)
+
+    # 颜色
     if "color" in obj:
         parts.append(obj["color"])
+
+    # 大小
+    if "size" in obj:
+        parts.append(obj["size"])
+
+    # 材质
+    if "material" in obj:
+        parts.append(obj["material"])
+
+    # 形状
     if "shape" in obj:
         parts.append(obj["shape"])
-    if "size" in obj:
-        parts.append(f"({obj['size']})")
+
     return " ".join(parts) if parts else obj.get("id", "object")
 
 
