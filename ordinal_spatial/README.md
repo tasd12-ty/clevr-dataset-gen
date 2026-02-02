@@ -201,6 +201,17 @@ ordinal_spatial/
 │   ├── t2_extraction.py
 │   └── t3_reconstruction.py
 │
+├── agents/                 # VLM 约束提取智能体
+│   ├── __init__.py         # 模块入口
+│   ├── base.py             # 基类和数据结构
+│   ├── vlm_constraint_agent.py    # VLM 智能体 (Task-2/3)
+│   ├── blender_constraint_agent.py # Blender 智能体 (Task-1)
+│   ├── cli.py              # 命令行接口
+│   ├── prompts/            # 智能体提示词
+│   │   └── constraint_extraction.py
+│   └── tests/              # 智能体测试
+│       └── test_vlm_agent.py
+│
 ├── prompts/                # VLM 提示模板
 │   ├── system_prompts.py
 │   └── task_prompts.py
@@ -213,6 +224,117 @@ ordinal_spatial/
 │
 └── tests/                  # 单元测试
 ```
+
+## 约束提取智能体
+
+### 概述
+
+本模块提供三种约束提取任务的智能体实现：
+
+| 任务 | 智能体 | 描述 |
+|------|--------|------|
+| **Task-1** | `BlenderConstraintAgent` | 从 Blender 场景数据提取真值约束 |
+| **Task-2** | `VLMConstraintAgent` | 从多视角图像提取约束 (VLM) |
+| **Task-3** | `VLMConstraintAgent` | 从单视角图像提取约束 (VLM) |
+
+### 命令行使用
+
+```bash
+# Task-3: 单视角约束提取
+python -m ordinal_spatial.agents.cli extract \
+    --image scene.png \
+    --output constraints.json \
+    --tau 0.10
+
+# Task-2: 多视角约束提取
+python -m ordinal_spatial.agents.cli extract \
+    --images view1.png view2.png view3.png \
+    --output constraints.json
+
+# 使用自定义模型
+python -m ordinal_spatial.agents.cli extract \
+    --image scene.png \
+    --model openai/gpt-4o \
+    --output constraints.json
+```
+
+### API 使用
+
+```python
+# Task-1: Blender 真值提取
+from ordinal_spatial.agents import BlenderConstraintAgent
+
+agent = BlenderConstraintAgent()
+
+# 从 CLEVR 场景文件提取
+constraints_list = agent.extract_from_clevr_scenes(
+    "output/CLEVR_scenes.json",
+    tau=0.10
+)
+
+# 从 .blend 文件提取
+constraints = agent.extract_from_blend_file(
+    "scene.blend",
+    tau=0.10
+)
+
+# Task-2/3: VLM 约束提取
+from ordinal_spatial.agents import VLMConstraintAgent, VLMAgentConfig
+
+config = VLMAgentConfig(
+    model="google/gemma-3-27b-it",
+    temperature=0.0,
+)
+agent = VLMConstraintAgent(config)
+
+# 单视角提取 (Task-3)
+result = agent.extract_from_single_view(
+    "scene.png",
+    tau=0.10,
+)
+
+# 多视角提取 (Task-2)
+result = agent.extract_from_multi_view(
+    ["view1.png", "view2.png", "view3.png"],
+    tau=0.10,
+)
+
+# 输出结果
+print(result.summary())
+print(f"总约束数: {result.total_constraints()}")
+```
+
+### 输出格式 (QSP - 定性场景程序)
+
+```json
+{
+  "objects": [
+    {"id": "cube1", "type": "cube", "color": "red", "size_class": "large"}
+  ],
+  "constraints": {
+    "axial": [{"obj1": "cube1", "obj2": "sphere1", "relation": "left_of"}],
+    "topology": [{"obj1": "cube1", "obj2": "sphere1", "relation": "disjoint"}],
+    "occlusion": [{"occluder": "cube1", "occluded": "sphere1", "partial": false}],
+    "size": [{"bigger": "cube1", "smaller": "sphere1"}],
+    "closer": [{"anchor": "cube1", "closer": "sphere1", "farther": "cone1"}],
+    "qrr": [...],
+    "trr": [...]
+  },
+  "confidence": 0.85
+}
+```
+
+### 支持的约束类型
+
+| 约束类型 | 描述 | 示例 |
+|----------|------|------|
+| **axial** | 二元轴向偏序 | left_of, right_of, above, below, in_front_of, behind |
+| **topology** | RCC-8 拓扑关系 | disjoint, touching, overlapping |
+| **occlusion** | 遮挡关系 | A 遮挡 B (视角相关) |
+| **size** | 尺寸比较 | A 比 B 大 |
+| **closer** | 三元距离比较 | B 比 C 更接近 A |
+| **qrr** | 四元相对距离 | dist(A,B) < dist(C,D) |
+| **trr** | 三元时钟方向 | A 在 B→C 轴的 3 点钟方向 |
 
 ## 容差参数 (tau)
 

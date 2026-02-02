@@ -236,6 +236,11 @@ clevr-dataset-gen/
 │   │   ├── vlm_direct.py          # Direct VLM baseline
 │   │   ├── embedding.py           # Embedding baseline
 │   │   └── hybrid.py              # Hybrid baseline
+│   ├── agents/                    # VLM constraint extraction agents
+│   │   ├── vlm_constraint_agent.py    # VLM agent (Task-2/3)
+│   │   ├── blender_constraint_agent.py # Blender agent (Task-1)
+│   │   ├── cli.py                 # Command-line interface
+│   │   └── prompts/               # Agent prompts
 │   ├── prompts/                   # VLM prompt templates
 │   ├── tasks/                     # Evaluation task runners (T1/T2/T3)
 │   ├── scripts/                   # CLI tools
