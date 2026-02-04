@@ -25,6 +25,7 @@ from ordinal_spatial.dsl.schema import (
     CloserConstraint,
     TopologyConstraint,
     OcclusionConstraint,
+    QRRConstraintSchema,
 )
 
 
@@ -99,8 +100,72 @@ class TestConstraintSet:
         )
         summary = cs.summary()
         assert "Objects: 1" in summary
-        assert "Axial constraints: 1" in summary
+        assert "Axial:    1" in summary
         assert "Confidence: 0.90" in summary
+
+    def test_count_by_arity(self):
+        """Test arity-based counting with expected combinatorial values."""
+        objs = [
+            ObjectInfo(id="a", type="cube", color="red"),
+            ObjectInfo(id="b", type="sphere", color="blue"),
+            ObjectInfo(id="c", type="cylinder", color="green"),
+            ObjectInfo(id="d", type="cube", color="yellow"),
+            ObjectInfo(id="e", type="sphere", color="gray"),
+        ]
+        cs = ConstraintSet(
+            objects=objs,
+            axial=[AxialConstraint(obj1="a", obj2="b", relation=AxialRelation.LEFT_OF)],
+            topology=[TopologyConstraint(obj1="a", obj2="b", relation="disjoint")],
+            size=[SizeConstraint(bigger="a", smaller="b")],
+            closer=[CloserConstraint(anchor="a", closer="b", farther="c")],
+            qrr=[QRRConstraintSchema(pair1=["a", "b"], pair2=["c", "d"], metric="dist3D", comparator="<")],
+        )
+        counts = cs.count_by_arity()
+
+        # N=5
+        assert counts["n_objects"] == 5
+        # C(5,2)=10
+        assert counts["binary"]["expected_pairs"] == 10
+        # C(5,3)=10
+        assert counts["ternary"]["expected_triples"] == 10
+        # 3*C(5,4)=15
+        assert counts["quaternary"]["expected_pure_qrr"] == 15
+
+        # Actual counts
+        assert counts["binary"]["axial"] == 1
+        assert counts["binary"]["topology"] == 1
+        assert counts["binary"]["size"] == 1
+        assert counts["binary"]["total"] == 3
+        assert counts["ternary"]["closer"] == 1
+        assert counts["ternary"]["total"] == 1
+        assert counts["quaternary"]["qrr"] == 1
+        assert counts["grand_total"] == 5
+
+    def test_count_by_arity_small(self):
+        """Test arity counting with 3 objects (no QRR possible)."""
+        objs = [
+            ObjectInfo(id="a", type="cube", color="red"),
+            ObjectInfo(id="b", type="sphere", color="blue"),
+            ObjectInfo(id="c", type="cylinder", color="green"),
+        ]
+        cs = ConstraintSet(objects=objs)
+        counts = cs.count_by_arity()
+
+        assert counts["n_objects"] == 3
+        assert counts["binary"]["expected_pairs"] == 3  # C(3,2)
+        assert counts["ternary"]["expected_triples"] == 1  # C(3,3)
+        assert counts["quaternary"]["expected_pure_qrr"] == 0  # N<4
+
+    def test_to_dict_includes_counts(self):
+        """Test that to_dict includes counts field."""
+        cs = ConstraintSet(
+            objects=[ObjectInfo(id="a", type="cube", color="red")],
+        )
+        data = cs.to_dict()
+        assert "counts" in data
+        assert "binary" in data["counts"]
+        assert "ternary" in data["counts"]
+        assert "quaternary" in data["counts"]
 
 
 # =============================================================================

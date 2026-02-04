@@ -17,7 +17,7 @@ torch>=2.0.0
 
 # VLM API
 openai>=1.0.0
-httpx>=0.24.0
+httpx[socks]>=0.24.0
 
 # Testing
 pytest>=7.0.0
@@ -25,6 +25,14 @@ pytest-cov>=4.0.0
 
 # Visualization
 matplotlib>=3.5.0
+
+# Optional: Token counting
+# tiktoken>=0.5.0
+# transformers>=4.30.0
+
+# Optional: Advanced visualization
+# seaborn>=0.12.0
+# plotly>=5.0.0
 
 # Optional: Blender Python API (installed via Blender)
 # bpy

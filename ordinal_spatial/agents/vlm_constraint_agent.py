@@ -381,62 +381,82 @@ class VLMConstraintAgent(ConstraintAgent):
 
         # Parse axial constraints
         axial = []
+        _axial_values = {r.value for r in AxialRelation}
         for c in constraints.get("axial", []):
             try:
-                relation = AxialRelation(c.get("relation", "left_of"))
+                obj1 = c.get("obj1") or c.get("target")
+                obj2 = c.get("obj2") or c.get("reference")
+                rel_str = c.get("relation", "left_of")
+                # Fix swapped obj2/relation (VLM sometimes swaps them)
+                if obj2 in _axial_values and rel_str not in _axial_values:
+                    obj2, rel_str = rel_str, obj2
+                relation = AxialRelation(rel_str)
                 axial.append(AxialConstraint(
-                    obj1=c["obj1"],
-                    obj2=c["obj2"],
+                    obj1=obj1,
+                    obj2=obj2,
                     relation=relation,
                 ))
-            except (KeyError, ValueError) as e:
+            except (KeyError, ValueError, TypeError) as e:
                 logger.warning(f"Invalid axial constraint: {c}, error: {e}")
 
         # Parse topology constraints
         topology = []
         for c in constraints.get("topology", []):
             try:
+                obj1 = c.get("obj1") or c.get("target")
+                obj2 = c.get("obj2") or c.get("reference")
                 topology.append(TopologyConstraint(
-                    obj1=c["obj1"],
-                    obj2=c["obj2"],
+                    obj1=obj1,
+                    obj2=obj2,
                     relation=c.get("relation", "disjoint"),
                 ))
-            except (KeyError, ValueError) as e:
+            except (KeyError, ValueError, TypeError) as e:
                 logger.warning(f"Invalid topology constraint: {c}, error: {e}")
 
         # Parse occlusion constraints
         occlusion = []
         for c in constraints.get("occlusion", []):
             try:
+                occluder = c.get("occluder") or c.get("target")
+                occluded = c.get("occluded") or c.get("reference")
                 occlusion.append(OcclusionConstraint(
-                    occluder=c["occluder"],
-                    occluded=c["occluded"],
+                    occluder=occluder,
+                    occluded=occluded,
                     partial=c.get("partial", False),
                 ))
-            except (KeyError, ValueError) as e:
+            except (KeyError, ValueError, TypeError) as e:
                 logger.warning(f"Invalid occlusion constraint: {c}, error: {e}")
 
         # Parse size constraints
         size = []
         for c in constraints.get("size", []):
             try:
+                bigger = c.get("bigger")
+                smaller = c.get("smaller")
+                if not bigger and c.get("relation") == "bigger":
+                    bigger = c.get("target")
+                    smaller = c.get("reference")
+                elif not bigger and c.get("relation") == "smaller":
+                    bigger = c.get("reference")
+                    smaller = c.get("target")
                 size.append(SizeConstraint(
-                    bigger=c["bigger"],
-                    smaller=c["smaller"],
+                    bigger=bigger,
+                    smaller=smaller,
                 ))
-            except (KeyError, ValueError) as e:
+            except (KeyError, ValueError, TypeError) as e:
                 logger.warning(f"Invalid size constraint: {c}, error: {e}")
 
         # Parse closer constraints
         closer = []
         for c in constraints.get("closer", []):
             try:
+                farther = c.get("farther") or c.get("further")
                 closer.append(CloserConstraint(
                     anchor=c["anchor"],
                     closer=c["closer"],
-                    farther=c["farther"],
+                    farther=farther,
                 ))
-            except (KeyError, ValueError) as e:
+            except (KeyError, ValueError, TypeError) as e:
                 logger.warning(f"Invalid closer constraint: {c}, error: {e}")
 
         # Parse QRR constraints

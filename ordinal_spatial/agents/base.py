@@ -98,6 +98,7 @@ class ConstraintSet:
                 "closer": [c.model_dump() for c in self.closer],
             },
             "confidence": self.confidence,
+            "counts": self.count_by_arity(),
             "metadata": self.metadata,
         }
 
@@ -137,19 +138,36 @@ class ConstraintSet:
 
     def summary(self) -> str:
         """
-        返回约束集合的摘要。
+        返回约束集合的摘要，按元数分组。
 
-        Return a summary of the constraint set.
+        Return a summary of the constraint set, grouped by arity.
         """
+        counts = self.count_by_arity()
+        n = counts["n_objects"]
+        b = counts["binary"]
+        t = counts["ternary"]
+        q = counts["quaternary"]
+
         lines = [
-            f"Objects: {len(self.objects)}",
-            f"QRR constraints: {len(self.qrr)}",
-            f"TRR constraints: {len(self.trr)}",
-            f"Topology constraints: {len(self.topology)}",
-            f"Occlusion constraints: {len(self.occlusion)}",
-            f"Axial constraints: {len(self.axial)}",
-            f"Size constraints: {len(self.size)}",
-            f"Closer constraints: {len(self.closer)}",
+            f"Objects: {n}",
+            f"",
+            f"Binary (pairs, expected C({n},2)={b['expected_pairs']}):",
+            f"  Axial:    {b['axial']}",
+            f"  Topology: {b['topology']}",
+            f"  Size:     {b['size']}",
+            f"  Occlusion:{b['occlusion']}",
+            f"  Subtotal: {b['total']}",
+            f"",
+            f"Ternary (triples, expected C({n},3)={t['expected_triples']}):",
+            f"  Closer:   {t['closer']}",
+            f"  TRR:      {t['trr']}",
+            f"  Subtotal: {t['total']}",
+            f"",
+            f"Quaternary (pure QRR, expected 3*C({n},4)={q['expected_pure_qrr']}):",
+            f"  QRR:      {q['qrr']}",
+            f"  Subtotal: {q['total']}",
+            f"",
+            f"Grand total: {counts['grand_total']}",
             f"Confidence: {self.confidence:.2f}",
         ]
         return "\n".join(lines)
@@ -161,6 +179,50 @@ class ConstraintSet:
             len(self.occlusion) + len(self.axial) + len(self.size) +
             len(self.closer)
         )
+
+    def count_by_arity(self) -> Dict[str, Dict[str, Any]]:
+        """
+        按关系元数分组计数，并给出理论期望值。
+
+        Count constraints grouped by arity (binary/ternary/quaternary),
+        with expected values based on combinatorial formulas.
+
+        Returns:
+            Dict with arity groups, each containing actual counts
+            and expected counts based on number of objects.
+        """
+        n = len(self.objects)
+        pairs = n * (n - 1) // 2  # C(n,2)
+        triples = n * (n - 1) * (n - 2) // 6  # C(n,3)
+        pure_qrr = n * (n - 1) * (n - 2) * (n - 3) // 8 if n >= 4 else 0  # 3*C(n,4)
+
+        binary_total = len(self.axial) + len(self.topology) + len(self.size) + len(self.occlusion)
+        ternary_total = len(self.closer) + len(self.trr)
+        quaternary_total = len(self.qrr)
+
+        return {
+            "n_objects": n,
+            "binary": {
+                "axial": len(self.axial),
+                "topology": len(self.topology),
+                "size": len(self.size),
+                "occlusion": len(self.occlusion),
+                "total": binary_total,
+                "expected_pairs": pairs,
+            },
+            "ternary": {
+                "closer": len(self.closer),
+                "trr": len(self.trr),
+                "total": ternary_total,
+                "expected_triples": triples,
+            },
+            "quaternary": {
+                "qrr": len(self.qrr),
+                "total": quaternary_total,
+                "expected_pure_qrr": pure_qrr,
+            },
+            "grand_total": binary_total + ternary_total + quaternary_total,
+        }
 
 
 class ConstraintAgent(ABC):

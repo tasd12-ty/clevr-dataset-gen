@@ -438,7 +438,7 @@ class BlenderConstraintAgent(ConstraintAgent):
             axial = self._compute_axial_closure(axial)
             size = self._compute_size_closure(size)
 
-        return ConstraintSet(
+        result = ConstraintSet(
             objects=object_infos,
             qrr=qrr,
             trr=trr,
@@ -455,6 +455,8 @@ class BlenderConstraintAgent(ConstraintAgent):
                 "n_objects": len(object_infos),
             }
         )
+        result.metadata["counts"] = result.count_by_arity()
+        return result
 
     def _extract_qrr(self, objects: Dict[str, Dict]) -> List[QRRConstraintSchema]:
         """提取 QRR 约束。"""
