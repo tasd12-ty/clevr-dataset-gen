@@ -49,9 +49,17 @@ if INSIDE_BLENDER:
     try:
         import utils
     except ImportError:
-        print("\nERROR: Cannot import utils.py")
-        print("Add image_generation to Blender's Python path.")
-        sys.exit(1)
+        # Try to add the script directory to sys.path and retry.
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        try:
+            import utils
+        except ImportError:
+            print("\nERROR: Cannot import utils.py")
+            print(f"Tried adding script dir to sys.path: {script_dir}")
+            print("Add image_generation to Blender's Python path.")
+            sys.exit(1)
 
 
 @dataclass

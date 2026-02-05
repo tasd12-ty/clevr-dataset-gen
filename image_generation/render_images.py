@@ -40,15 +40,23 @@ except ImportError as e:
 if INSIDE_BLENDER:
   try:
     import utils
-  except ImportError as e:
-    print("\nERROR")
-    print("Running render_images.py from Blender and cannot import utils.py.")
-    print("You may need to add a .pth file to the site-packages of Blender's")
-    print("bundled python with a command like this:\n")
-    print("echo $PWD >> $BLENDER/$VERSION/python/lib/pythonX.X/site-packages/clevr.pth")
-    print("\nWhere $BLENDER is the directory where Blender is installed, and")
-    print("$VERSION is your Blender version (such as 2.78 or 5.0).")
-    sys.exit(1)
+  except ImportError:
+    # Try to add the script directory to sys.path and retry.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir not in sys.path:
+      sys.path.insert(0, script_dir)
+    try:
+      import utils
+    except ImportError:
+      print("\nERROR")
+      print("Running render_images.py from Blender and cannot import utils.py.")
+      print(f"Tried adding script dir to sys.path: {script_dir}")
+      print("You may need to add a .pth file to the site-packages of Blender's")
+      print("bundled python with a command like this:\n")
+      print("echo $PWD >> $BLENDER/$VERSION/python/lib/pythonX.X/site-packages/clevr.pth")
+      print("\nWhere $BLENDER is the directory where Blender is installed, and")
+      print("$VERSION is your Blender version (such as 2.78 or 5.0).")
+      sys.exit(1)
 
 def get_object_by_name(name, alternative_names=None):
   """
@@ -751,4 +759,3 @@ if __name__ == '__main__':
     print('arguments like this:')
     print()
     print('python render_images.py --help')
-

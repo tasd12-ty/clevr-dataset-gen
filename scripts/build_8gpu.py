@@ -8,6 +8,7 @@
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -53,9 +54,17 @@ def main():
     )
 
     # 可选高级参数
+    default_blender = (
+        os.environ.get("BLENDER_PATH")
+        or os.environ.get("BLENDER_BIN")
+        or "/mnt/d/tools/blender/blender.exe"
+    )
     parser.add_argument("--n-gpus", type=int, default=8, help="GPU数量 (默认: 8)")
-    parser.add_argument("--blender", default="/mnt/d/tools/blender/blender.exe",
-                       help="Blender路径")
+    parser.add_argument(
+        "--blender",
+        default=default_blender,
+        help="Blender路径 (可用环境变量 BLENDER_PATH/BLENDER_BIN 覆盖)"
+    )
 
     args = parser.parse_args()
 

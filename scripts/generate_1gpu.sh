@@ -10,13 +10,23 @@ set -e
 
 # ============= 单GPU配置 =============
 OUTPUT_DIR="./data/benchmark_1gpu"
-BLENDER_PATH="/mnt/d/tools/blender/blender.exe"
+BLENDER_PATH="${BLENDER_PATH:-/mnt/d/tools/blender/blender.exe}"
 N_GPUS=1                                # 单GPU
 GPU_ID=0                                # 使用第0号GPU（可改为0-7）
 # ====================================
 
 SIZE=${1:-tiny}         # 默认tiny（单GPU建议用小规模）
 QUALITY=${2:-normal}
+
+# Validate Blender path
+if [ ! -x "$BLENDER_PATH" ]; then
+    if command -v "$BLENDER_PATH" >/dev/null 2>&1; then
+        BLENDER_PATH="$(command -v "$BLENDER_PATH")"
+    else
+        echo "Error: Blender not found. Set BLENDER_PATH=/path/to/blender"
+        exit 1
+    fi
+fi
 
 # 设置只使用指定GPU
 export CUDA_VISIBLE_DEVICES=$GPU_ID
