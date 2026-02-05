@@ -48,6 +48,66 @@ If you find this code useful in your research then please cite
 }
 ```
 
+## Environment Setup
+
+### Option 1: Using uv (Recommended)
+
+This project uses [uv](https://github.com/astral-sh/uv) for fast, reliable dependency management.
+
+**Step 1: Install uv**
+
+```bash
+# Linux/macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Or via pip
+pip install uv
+```
+
+**Step 2: Install dependencies**
+
+```bash
+# Clone the repository
+git clone <your-repo-url>
+cd clevr-dataset-gen
+
+# Install all dependencies (creates .venv and installs packages)
+uv sync
+
+# Activate the virtual environment
+source .venv/bin/activate  # Linux/macOS
+.venv\Scripts\activate     # Windows
+```
+
+**Step 3: Optional features**
+
+```bash
+# Install specific feature sets
+uv sync --extra dev        # Development tools (includes all features + pytest)
+uv sync --extra ml         # PyTorch for ML baselines
+uv sync --extra tokenizer  # Tokenization tools (tiktoken, transformers)
+uv sync --extra viz        # Visualization tools (seaborn, plotly)
+
+# Install multiple extras
+uv sync --extra ml --extra viz
+```
+
+### Option 2: Using pip (Legacy)
+
+```bash
+# Basic dependencies
+pip install -r ordinal_spatial/requirements.txt
+
+# Or install from pyproject.toml
+pip install -e .
+
+# With optional dependencies
+pip install -e ".[dev]"
+```
+
 ## Blender Version Compatibility
 
 | Blender Version | Status | Notes |
