@@ -40,6 +40,59 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def resolve_image_generation_dir(script_path: Path, explicit_dir: str = "") -> Path:
+    """
+    解析 image_generation 目录（优先内置 bundle）。
+
+    优先级:
+    1) --img-gen-dir 显式参数
+    2) 环境变量 IMG_GEN_DIR
+    3) ordinal_spatial/image_generation（打包内置）
+    4) 仓库根目录 image_generation（兼容旧布局）
+    """
+    candidates: List[Path] = []
+
+    if explicit_dir:
+        candidates.append(Path(explicit_dir).expanduser().resolve())
+
+    env_dir = os.environ.get("IMG_GEN_DIR", "")
+    if env_dir:
+        p = Path(env_dir).expanduser().resolve()
+        if p not in candidates:
+            candidates.append(p)
+
+    bundled = script_path.parents[1] / "image_generation"
+    legacy = script_path.parents[2] / "image_generation"
+    for p in (bundled, legacy):
+        rp = p.resolve()
+        if rp not in candidates:
+            candidates.append(rp)
+
+    required = [
+        ("render_multiview.py",),
+        ("data", "base_scene_v5.blend"),
+        ("data", "properties.json"),
+        ("data", "shapes_v5"),
+        ("data", "materials_v5"),
+    ]
+
+    for c in candidates:
+        ok = True
+        for segs in required:
+            if not (c.joinpath(*segs)).exists():
+                ok = False
+                break
+        if ok:
+            return c
+
+    tried = "\n".join([f"  - {x}" for x in candidates]) if candidates else "  (none)"
+    raise FileNotFoundError(
+        "Cannot locate image_generation assets. Tried:\n"
+        f"{tried}\n"
+        "Provide --img-gen-dir or set IMG_GEN_DIR."
+    )
+
+
 @dataclass
 class SplitConfig:
     """Configuration for a dataset split."""
@@ -56,6 +109,7 @@ class BenchmarkConfig:
     """Complete benchmark configuration."""
     output_dir: str
     blender_path: str
+    image_gen_dir: str = ""
     n_views: int = 4
     image_width: int = 480
     image_height: int = 320
@@ -98,7 +152,10 @@ class BenchmarkBuilder:
         """
         self.config = config
         self.output_dir = Path(config.output_dir)
-        self.image_gen_dir = Path(__file__).parent.parent.parent / "image_generation"
+        self.image_gen_dir = resolve_image_generation_dir(
+            script_path=Path(__file__).resolve(),
+            explicit_dir=config.image_gen_dir,
+        )
 
     def build(self) -> Dict[str, Any]:
         """
@@ -211,16 +268,21 @@ class BenchmarkBuilder:
 
         render_output.mkdir(parents=True, exist_ok=True)
 
-        # Use relative paths for Windows Blender compatibility
+        render_script = self.image_gen_dir / "render_multiview.py"
+        base_scene = self.image_gen_dir / "data" / "base_scene_v5.blend"
+        properties_json = self.image_gen_dir / "data" / "properties.json"
+        shape_dir = self.image_gen_dir / "data" / "shapes_v5"
+        material_dir = self.image_gen_dir / "data" / "materials_v5"
+
         cmd = [
             self.config.blender_path,
             "--background",
-            "--python", "image_generation/render_multiview.py",
+            "--python", str(render_script),
             "--",
-            "--base_scene_blendfile", "image_generation/data/base_scene_v5.blend",
-            "--properties_json", "image_generation/data/properties.json",
-            "--shape_dir", "image_generation/data/shapes_v5",
-            "--material_dir", "image_generation/data/materials_v5",
+            "--base_scene_blendfile", str(base_scene),
+            "--properties_json", str(properties_json),
+            "--shape_dir", str(shape_dir),
+            "--material_dir", str(material_dir),
             "--output_dir", blender_output,
             "--split", split_config.name,
             "--num_images", str(split_config.n_scenes),
@@ -238,6 +300,7 @@ class BenchmarkBuilder:
             cmd.extend(["--use_gpu", "1"])
 
         logger.info(f"Running Blender render to {blender_output}...")
+        logger.info(f"Using image_generation at: {self.image_gen_dir}")
 
         try:
             result = subprocess.run(
@@ -446,6 +509,11 @@ def main():
         default="blender",
         help="Path to Blender executable"
     )
+    parser.add_argument(
+        "--img-gen-dir",
+        default="",
+        help="image_generation directory (optional, auto-detected by default)"
+    )
 
     # Dataset size
     parser.add_argument("--n-train", type=int, default=1000)
@@ -512,6 +580,7 @@ def main():
     config = BenchmarkConfig(
         output_dir=args.output_dir,
         blender_path=args.blender_path,
+        image_gen_dir=args.img_gen_dir,
         n_views=args.n_views,
         image_width=args.width,
         image_height=args.height,
