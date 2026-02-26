@@ -28,61 +28,153 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## 快速开始
+## 快速开始（实测可运行）
 
-### 生成数据集
+下面流程基于当前仓库目录结构（`ordinal_spatial/data` 含 `images/`, `metadata/`, `index.json`）。
 
-```bash
-# 生成小型测试数据集
-python -m ordinal_spatial.scripts.generate_dataset --small --output-dir ./data
+### 1. 环境安装
 
-# 生成完整数据集
-python -m ordinal_spatial.scripts.generate_dataset \
-    --n-train 10000 \
-    --n-val 1500 \
-    --n-test 1500 \
-    --output-dir ./data
-```
-
-### 运行基线模型
+建议在仓库根目录执行（不是 `ordinal_spatial/` 子目录）：
 
 ```bash
-# 在 T1-Q 任务上运行 oracle 基线
-python -m ordinal_spatial.scripts.run_baseline \
-    --baseline oracle \
-    --task t1-q \
-    --data ./data \
-    --split test_iid \
-    --output ./results
+cd /path/to/clevr-dataset-gen
 
-# 运行 VLM 基线（需要 API 密钥）
-export OPENROUTER_API_KEY="your-key"
-python -m ordinal_spatial.scripts.run_baseline \
-    --baseline vlm_direct \
-    --task t2 \
-    --data ./data \
-    --model openai/gpt-4o
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install -r ordinal_spatial/requirements.txt
+pip install -e .
 ```
 
-### 评估预测结果
+### 2. 生成 split 文件（如果没有）
+
+当前 VLM 提取脚本读取：
+
+- `--split test_iid` 对应 `ordinal_spatial/data/splits/test_iid.json`
+- `--split xxx` 对应 `ordinal_spatial/data/splits/xxx.json`
+
+如果 `splits/` 不存在，可以从 `index.json` 生成：
 
 ```bash
-python -m ordinal_spatial.scripts.evaluate \
-    --predictions ./results/predictions.json \
-    --ground-truth ./results/ground_truth.json \
-    --task t1-q \
-    --analyze-failures
+cd /path/to/clevr-dataset-gen
+python3 - <<'PY'
+import json, os
+src = "ordinal_spatial/data/index.json"
+dst = "ordinal_spatial/data/splits/test_iid.json"
+with open(src) as f:
+    data = json.load(f)
+mapped = [{
+    "scene_id": x.get("scene_id"),
+    "single_view_image": x.get("single_view_image", x.get("single_view", "")),
+    "multi_view_images": x.get("multi_view_images", x.get("multi_view", [])),
+    "metadata_path": x.get("metadata_path", x.get("metadata", "")),
+} for x in data]
+os.makedirs("ordinal_spatial/data/splits", exist_ok=True)
+with open(dst, "w") as f:
+    json.dump(mapped, f, ensure_ascii=False, indent=2)
+print("wrote", dst, "count=", len(mapped))
+PY
 ```
 
-### 可视化结果
+如果要做“每种物体数量各 2 个场景”（3~10 物体，共 16 场景）：
 
 ```bash
-python -m ordinal_spatial.scripts.visualize \
-    --predictions ./results/predictions.json \
-    --ground-truth ./results/ground_truth.json \
-    --task t1-q \
-    --output-dir ./visualizations
+cd /path/to/clevr-dataset-gen
+python3 - <<'PY'
+import json, os
+root = "ordinal_spatial/data"
+out = "ordinal_spatial/data/splits/test_iid_2percount.json"
+all_items = []
+for n in range(3, 11):
+    with open(f"{root}/by_count/{n}_objects.json") as f:
+        d = json.load(f)[:2]
+    for x in d:
+        all_items.append({
+            "scene_id": x.get("scene_id"),
+            "single_view_image": x.get("single_view_image", x.get("single_view", "")),
+            "multi_view_images": x.get("multi_view_images", x.get("multi_view", [])),
+            "metadata_path": x.get("metadata_path", x.get("metadata", "")),
+        })
+os.makedirs(f"{root}/splits", exist_ok=True)
+with open(out, "w") as f:
+    json.dump(all_items, f, ensure_ascii=False, indent=2)
+print("wrote", out, "count=", len(all_items))
+PY
 ```
+
+### 3. 参数说明（你问到的两个参数）
+
+- `--split`：选择要读取的 split 文件名（不带 `.json`）。
+  - 例如 `--split test_iid` -> `ordinal_spatial/data/splits/test_iid.json`
+- `--max-scenes`：最多处理多少场景。
+  - `--max-scenes 1` 常用于 smoke test
+  - 不设置时处理该 split 内全部场景
+
+### 4. 单视角 VLM 约束提取（OpenRouter）
+
+```bash
+cd /path/to/clevr-dataset-gen
+env -u ALL_PROXY -u all_proxy -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy -u NO_PROXY -u no_proxy \
+OPENROUTER_API_KEY="<your_openrouter_key>" \
+PYTHONPATH=. python3 -m ordinal_spatial.scripts.extract_vlm_single \
+  --benchmark-dir ./ordinal_spatial/data \
+  --split test_iid_2percount \
+  --model bytedance-seed/seed-1.6-flash \
+  --api-base https://openrouter.ai/api/v1 \
+  --output-dir ./ordinal_spatial/results/vlm_single_openrouter_seed16_2percount \
+  --save-every 1 --delay 0.2
+```
+
+单场景快速验证：
+
+```bash
+cd /path/to/clevr-dataset-gen
+env -u ALL_PROXY -u all_proxy -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy -u NO_PROXY -u no_proxy \
+OPENROUTER_API_KEY="<your_openrouter_key>" \
+PYTHONPATH=. python3 -m ordinal_spatial.scripts.extract_vlm_single \
+  --benchmark-dir ./ordinal_spatial/data \
+  --split test_iid_2percount \
+  --max-scenes 1 \
+  --model bytedance-seed/seed-1.6-flash \
+  --api-base https://openrouter.ai/api/v1 \
+  --output-dir ./ordinal_spatial/results/vlm_single_smoke
+```
+
+### 5. 多视角 VLM 约束提取
+
+```bash
+cd /path/to/clevr-dataset-gen
+env -u ALL_PROXY -u all_proxy -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy -u NO_PROXY -u no_proxy \
+OPENROUTER_API_KEY="<your_openrouter_key>" \
+PYTHONPATH=. python3 -m ordinal_spatial.scripts.extract_vlm_multi \
+  --benchmark-dir ./ordinal_spatial/data \
+  --split test_iid_2percount \
+  --model bytedance-seed/seed-1.6-flash \
+  --api-base https://openrouter.ai/api/v1 \
+  --output-dir ./ordinal_spatial/results/vlm_multi_openrouter_seed16_2percount \
+  --save-every 1 --delay 0.2
+```
+
+### 6. 输出文件
+
+- 单视角结果：
+  - `ordinal_spatial/results/.../<split>_vlm_single.json`
+  - `ordinal_spatial/results/.../<split>_vlm_single_errors.json`（若有）
+- 多视角结果：
+  - `ordinal_spatial/results/.../<split>_vlm_multi.json`
+  - `ordinal_spatial/results/.../<split>_vlm_multi_errors.json`（若有）
+
+### 7. 常见问题排查
+
+- `ModuleNotFoundError: No module named 'ordinal_spatial'`
+  - 原因：不在仓库根目录运行
+  - 解决：`cd /path/to/clevr-dataset-gen` 且使用 `PYTHONPATH=.`
+- `Split file not found: .../data/splits/test_iid.json`
+  - 原因：`splits` 文件不存在
+  - 解决：按上面的脚本先生成 split
+- 提示 `openai package required...` 但已安装 `openai`
+  - 常见真实原因是代理环境导致 `httpx` 依赖分支异常
+  - 解决：运行命令时临时清空代理变量（见上方 `env -u ...`）
 
 ## API 使用
 
